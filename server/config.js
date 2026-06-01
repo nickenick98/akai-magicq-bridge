@@ -115,7 +115,8 @@ const defaultConfig = {
     backup: {
       enabled: true,
       applyOnStart: true,
-      address: '192.168.50.10/24'
+      address: '192.168.50.10/24',
+      refreshMs: 5000
     },
     main: {
       connection: '',

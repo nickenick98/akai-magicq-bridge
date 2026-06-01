@@ -16,9 +16,11 @@ config.state = readState();
 let pendingConfigWrite = null;
 let ledRefreshTimer = null;
 let midiWatchTimer = null;
+let networkBackupTimer = null;
 let lastMidiDeviceSignature = '';
 let lastMidiReconnectAttemptAt = 0;
 let lastMidiWatchReportAt = 0;
+let networkBackupApplying = false;
 
 const app = express();
 const server = http.createServer(app);
@@ -293,6 +295,7 @@ app.post('/api/config', (req, res) => {
   config.state = readState();
   led.setApcLayout(config.apc);
   reconnect();
+  startNetworkBackupTimer();
   res.json(config);
 });
 
@@ -307,6 +310,7 @@ app.post('/api/backup/restore', (req, res) => {
     config.state = writeState(restored.state);
     led.setApcLayout(config.apc);
     reconnect();
+    startNetworkBackupTimer();
     res.json({ ok: true, config, state: config.state });
   } catch (error) {
     reportError(error, 'backup');
@@ -413,6 +417,7 @@ app.get('/api/network', (req, res) => {
 
 app.post('/api/network', (req, res) => {
   config = updateConfig({ network: req.body || {} });
+  startNetworkBackupTimer();
   broadcast('status', status());
   res.json(getNetworkStatus(config));
 });
@@ -421,6 +426,7 @@ app.post('/api/network/apply', async (req, res) => {
   try {
     config = updateConfig({ network: req.body || config.network || {} });
     const networkStatus = await applyNetworkConfig(config);
+    startNetworkBackupTimer();
     broadcast('status', status());
     res.json({ ok: true, network: networkStatus });
   } catch (error) {
@@ -476,7 +482,7 @@ app.get('*', (req, res, next) => {
 reconnect();
 startLedRefreshTimer();
 startMidiWatchTimer();
-startNetworkBackup();
+startNetworkBackupTimer();
 
 const port = Number(config.server.port || process.env.PORT || 3001);
 const host = config.server.host || '0.0.0.0';
@@ -492,6 +498,10 @@ function shutdown() {
   if (midiWatchTimer) {
     clearInterval(midiWatchTimer);
     midiWatchTimer = null;
+  }
+  if (networkBackupTimer) {
+    clearInterval(networkBackupTimer);
+    networkBackupTimer = null;
   }
   if (pendingConfigWrite) {
     clearTimeout(pendingConfigWrite);
@@ -613,12 +623,26 @@ function midiDeviceSignature(devices) {
   });
 }
 
+function startNetworkBackupTimer() {
+  if (networkBackupTimer) clearInterval(networkBackupTimer);
+  startNetworkBackup();
+  const interval = Math.max(2000, Number(config.network?.backup?.refreshMs || 5000));
+  networkBackupTimer = setInterval(startNetworkBackup, interval);
+}
+
 async function startNetworkBackup() {
+  if (networkBackupApplying) return;
+  networkBackupApplying = true;
   try {
-    await applyBackupIp(config);
+    const networkStatus = await applyBackupIp(config);
+    if (networkStatus?.lastBackupApply && !networkStatus.lastBackupApply.ok) {
+      reportError(new Error(networkStatus.lastBackupApply.errors.join('; ')), 'network-backup');
+    }
     broadcast('status', status());
   } catch (error) {
-    reportError(error, 'network');
+    reportError(error, 'network-backup');
+  } finally {
+    networkBackupApplying = false;
   }
 }
 

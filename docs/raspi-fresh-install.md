@@ -100,6 +100,8 @@ Wenn die Backup-IP aktiv ist:
 http://192.168.50.10:3001
 ```
 
+Die Bridge setzt die Backup-IP beim Start und danach regelmaessig erneut. Das Interface wird dafuer auch ohne Link aktiv geschaltet, damit der Pi spaeter direkt am PC ueber diese Adresse erreichbar ist.
+
 ## 7. MIDI pruefen
 
 APC Mini MK2 anschliessen und pruefen:

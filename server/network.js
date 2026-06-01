@@ -66,8 +66,26 @@ async function applyBackupIp(config) {
     return getNetworkStatus(config);
   }
 
-  await run('ip', ['addr', 'replace', String(backup.address), 'dev', sanitizeInterface(config.network?.interface || 'eth0')]);
-  return getNetworkStatus(config);
+  const iface = sanitizeInterface(config.network?.interface || backup.interface || config.network?.main?.interface || 'eth0');
+  const errors = [];
+
+  for (const command of backupIpCommands(iface, backup.address)) {
+    try {
+      await run(command.bin, command.args);
+    } catch (error) {
+      errors.push(`${command.label}: ${error.message}`);
+    }
+  }
+
+  const status = getNetworkStatus(config);
+  status.lastBackupApply = {
+    ok: errors.length === 0,
+    errors,
+    interface: iface,
+    address: String(backup.address),
+    at: new Date().toISOString()
+  };
+  return status;
 }
 
 function buildNetworkCommands(network = {}) {
@@ -110,14 +128,25 @@ function buildNetworkCommands(network = {}) {
   });
 
   if (backup.enabled !== false && backup.address) {
-    commands.push({
-      label: 'Backup-IP setzen',
-      bin: 'ip',
-      args: ['addr', 'replace', String(backup.address), 'dev', iface]
-    });
+    commands.push(...backupIpCommands(iface, backup.address));
   }
 
   return commands;
+}
+
+function backupIpCommands(iface, address) {
+  return [
+    {
+      label: 'Interface fuer Backup-IP aktivieren',
+      bin: 'ip',
+      args: ['link', 'set', 'dev', iface, 'up']
+    },
+    {
+      label: 'Backup-IP setzen',
+      bin: 'ip',
+      args: ['addr', 'replace', String(address), 'dev', iface]
+    }
+  ];
 }
 
 function listInterfaces() {
@@ -159,12 +188,25 @@ function run(bin, args) {
 
 async function resolveConnectionName(interfaceName) {
   const iface = sanitizeInterface(interfaceName || 'eth0');
-  const result = await run('nmcli', ['-g', 'GENERAL.CONNECTION', 'device', 'show', iface]);
-  const connection = String(result.stdout || '').trim();
-  if (!connection || connection === '--') {
-    throw new Error(`Keine aktive NetworkManager-Verbindung fuer ${iface} gefunden.`);
+  try {
+    const result = await run('nmcli', ['-g', 'GENERAL.CONNECTION', 'device', 'show', iface]);
+    const connection = String(result.stdout || '').trim();
+    if (connection && connection !== '--') return connection;
+  } catch {
+    // Fall through to stored profiles or iface fallback.
   }
-  return connection;
+
+  try {
+    const result = await run('nmcli', ['-t', '-f', 'NAME,DEVICE', 'connection', 'show']);
+    for (const line of String(result.stdout || '').split(/\r?\n/)) {
+      const [name, device] = line.split(':');
+      if (device === iface && name) return name;
+    }
+  } catch {
+    // Fallback below still allows backup IP commands to run.
+  }
+
+  return iface;
 }
 
 module.exports = {

@@ -173,7 +173,7 @@ Im Panel `Raspberry Netzwerk` kann eine feste Backup-IP und eine Haupt-IP konfig
 - Haupt-IP: kann per DHCP laufen oder statisch gesetzt werden.
 - Unter Windows werden diese Werte nur gespeichert.
 - Unter Raspberry Pi OS/Linux wird die Haupt-IP ueber NetworkManager/`nmcli` gesetzt und die Backup-IP mit `ip addr replace` ergaenzt.
-- Wenn `Beim Start setzen` aktiv ist, versucht der Server beim Start automatisch, die Backup-IP erneut zu setzen.
+- Wenn `Beim Start setzen` aktiv ist, setzt der Server die Backup-IP beim Start und danach regelmaessig erneut. Dabei wird die Schnittstelle auch ohne Link/Carrier mit `ip link set dev <iface> up` aktiviert, damit ein direkt per Kabel angeschlossener PC die Backup-IP erreichen kann, sobald der Link steht.
 
 Raspberry Pi OS Bookworm nutzt standardmaessig NetworkManager. Wenn der systemd-Service als Benutzer `pi` laeuft, braucht die Netzwerk-Anwendung sudo-Rechte ohne Passwort fuer `ip` und `nmcli`, oder der Service muss mit passenden Rechten laufen. Ohne diese Rechte bleibt die Konfiguration gespeichert, kann aber nicht angewendet werden.
 
