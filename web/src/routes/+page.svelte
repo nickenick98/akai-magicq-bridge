@@ -115,7 +115,9 @@
   let error = '';
   let viewRevision = 0;
 
+  let quickMapEnabled = false;
   let bulkLed = { offColor: 5, offMode: 'solid', onColor: 21, activeMode: 'solid' };
+  let bulkLedEnabled = false;
   let bulkTargetEnabled = false;
   let bulkTarget = { type: 'disabled', action: 'off' };
   let quickMap = { targetType: 'auto-executor', page: 1, start: 1, action: 'toggle' };
@@ -141,6 +143,7 @@
   $: shiftNote = apc.shiftNote ?? 122;
   $: quickMapItems = quickMapSelection(selection, quickMap);
   $: quickMapCanSave = quickMapItems.length > 0;
+  $: bulkApplyEnabled = selection.length > 0 && (bulkTargetEnabled || bulkLedEnabled);
 
   onMount(async () => {
     await loadInitial();
@@ -719,24 +722,38 @@
   }
 
   async function applyBulkLed() {
+    if (!bulkTargetEnabled && !bulkLedEnabled) {
+      notice = 'Bitte Zieltyp oder Farbe/LED anhaken.';
+      return;
+    }
+
     const changed = [];
     const mappings = [...(config.mappings || [])];
 
     for (const item of selection) {
       const mapping = withDefaults(mappingFor(item.type, item.value, item.layer) || createMapping(item.type, item.value, item.layer), item.type, item.value);
+      let changedItem = false;
       if (bulkTargetEnabled) {
         mapping.target = mergeBulkTarget(mapping.target || {}, bulkTarget);
+        changedItem = true;
         if (mapping.target.type === 'disabled') {
           mapping.led = { ...(mapping.led || {}), offColor: 0, offMode: 'off', onColor: 0, activeMode: 'off' };
         }
       }
-      if (item.type !== 'fader' && mapping.target.type !== 'disabled') {
+      if (bulkLedEnabled && item.type !== 'fader' && mapping.target.type !== 'disabled') {
         mapping.led = { ...(mapping.led || {}), ...bulkLed };
+        changedItem = true;
       }
+      if (!changedItem) continue;
       const index = mappings.findIndex((existing) => existing.id === mapping.id);
       if (index >= 0) mappings[index] = mapping;
       else mappings.push(mapping);
       changed.push(mapping);
+    }
+
+    if (!changed.length) {
+      notice = 'Keine passenden Elemente fuer diese Mehrfachauswahl.';
+      return;
     }
 
     config = { ...config, mappings };
@@ -1151,7 +1168,22 @@
 
         {#if multiSelect}
           <div class="bulk-head"><strong>{selection.length} ausgewaehlt</strong><button class="secondary" on:click={() => (selection = [])}>Leeren</button></div>
-          <div class="quick-map">
+          <div class="bulk-options">
+            <label class="checkbox-row">
+              <input type="checkbox" bind:checked={quickMapEnabled} />
+              <span>Quick Mapping</span>
+            </label>
+            <label class="checkbox-row">
+              <input type="checkbox" bind:checked={bulkTargetEnabled} />
+              <span>Zieltyp mit aendern</span>
+            </label>
+            <label class="checkbox-row">
+              <input type="checkbox" bind:checked={bulkLedEnabled} />
+              <span>Farbe/LED setzen</span>
+            </label>
+          </div>
+          {#if quickMapEnabled}
+            <div class="quick-map">
             <div class="quick-map-head">
               <div>
                 <strong>Quick Mapping</strong>
@@ -1186,13 +1218,10 @@
             {:else}
               <p class="hint">Pads oder Buttons in der gewuenschten Reihenfolge anklicken.</p>
             {/if}
-          </div>
-          <div class="fields compact">
-            <label class="checkbox-row">
-              <input type="checkbox" bind:checked={bulkTargetEnabled} />
-              <span>Zieltyp mit aendern</span>
-            </label>
-            {#if bulkTargetEnabled}
+            </div>
+          {/if}
+          {#if bulkTargetEnabled}
+            <div class="fields compact">
               <label>
                 <span>Zieltyp</span>
                 <select value={bulkTarget.type} on:change={(event) => setBulkTargetType(event.currentTarget.value)}>
@@ -1279,10 +1308,24 @@
                   <label><span>Seite</span><input type="number" min="1" value={bulkTarget.page || 1} on:input={(event) => setBulkTarget('page', event.currentTarget.value)} /></label>
                 {/if}
               {/if}
-            {/if}
-          </div>
-          {@render LedControls(bulkLed, setBulkLed, 'pad')}
-          <button disabled={!selection.length} on:click={applyBulkLed}>Auf Auswahl anwenden</button>
+            </div>
+          {/if}
+          {#if bulkLedEnabled}
+            <div class="quick-map">
+              <div class="quick-map-head">
+                <div>
+                  <strong>Farbe/LED</strong>
+                  <span>Wird nur fuer Elemente mit LED angewendet, Fader bleiben unveraendert.</span>
+                </div>
+              </div>
+              {@render LedControls(bulkLed, setBulkLed, 'pad')}
+            </div>
+          {/if}
+          {#if bulkTargetEnabled || bulkLedEnabled}
+            <button disabled={!bulkApplyEnabled} on:click={applyBulkLed}>Mehrfachauswahl speichern</button>
+          {:else if !quickMapEnabled}
+            <p class="empty">Quick Mapping, Zieltyp oder Farbe/LED anhaken.</p>
+          {/if}
         {:else if editor}
           <div class="fields compact">
             <label><span>ID</span><input bind:value={editor.id} /></label>
@@ -1493,6 +1536,7 @@
   @keyframes led-pulse { 0%,100% { background: var(--effect-color); filter: brightness(.58); } 50% { background: var(--effect-color); filter: brightness(1.35); } }
   .editor { display: grid; align-content: start; gap: 12px; }
   .bulk-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+  .bulk-options { display: grid; grid-template-columns: repeat(3, minmax(120px, 1fr)); gap: 8px; }
   .quick-map { display: grid; gap: 12px; padding: 12px; border: 1px solid #2d372f; border-radius: 8px; background: #111612; }
   .quick-map-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
   .quick-map-head strong, .quick-map-head span { display: block; }
@@ -1506,5 +1550,5 @@
   .monitor-grid { display: grid; grid-template-columns: repeat(4, minmax(180px, 1fr)); gap: 12px; }
   .loading { min-height: 220px; display: grid; place-items: center; color: #aebdae; }
   @media (max-width: 1120px) { .workspace, .connection .fields, .network-fields, .ip-list, .live-strip, .monitor-grid { grid-template-columns: 1fr; } }
-  @media (max-width: 720px) { main { width: calc(100vw - 18px); } .topbar { align-items: flex-start; flex-direction: column; } .controller { grid-template-columns: 1fr; grid-template-areas: 'matrix' 'scenes' 'controls' 'faders'; } .matrix, .scenes, .controls, .faders { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+  @media (max-width: 720px) { main { width: calc(100vw - 18px); } .topbar { align-items: flex-start; flex-direction: column; } .controller { grid-template-columns: 1fr; grid-template-areas: 'matrix' 'scenes' 'controls' 'faders'; } .matrix, .scenes, .controls, .faders, .bulk-options { grid-template-columns: repeat(4, minmax(0, 1fr)); } .bulk-options { grid-template-columns: 1fr; } }
 </style>
