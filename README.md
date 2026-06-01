@@ -177,7 +177,7 @@ Im Panel `Raspberry Netzwerk` kann eine feste Backup-IP und eine Haupt-IP konfig
 - Haupt-IP: kann per DHCP laufen oder statisch gesetzt werden.
 - Unter Windows werden diese Werte nur gespeichert.
 - Unter Raspberry Pi OS/Linux wird die Haupt-IP ueber NetworkManager/`nmcli` gesetzt und die Backup-IP als zusaetzliche statische Adresse im NetworkManager-Profil hinterlegt und mit `ip addr replace` ergaenzt.
-- Bei statischer Haupt-IP setzt die Bridge die Haupt-IP zusaetzlich sofort per `ip addr replace` und optional das Gateway per `ip route replace`, damit die Adresse auch dann direkt aktiv wird, wenn NetworkManager den Reconnect nicht sauber schafft.
+- Bei statischer Haupt-IP schaltet die Bridge DHCP ab, entfernt vorhandene globale IPv4-Adressen vom Interface und setzt danach nur Haupt-IP plus Backup-IP neu. Die Haupt-IP wird zusaetzlich sofort per `ip addr replace` und optional das Gateway per `ip route replace` gesetzt, damit die Adresse auch dann direkt aktiv wird, wenn NetworkManager den Reconnect nicht sauber schafft.
 - Wenn kein passendes NetworkManager-Profil vorhanden ist, legt die Bridge beim Anwenden ein Profil `akai-bridge-<interface>` an, z. B. `akai-bridge-eth0`.
 - Wenn `Beim Start setzen` aktiv ist, setzt der Server die Backup-IP beim Start und danach regelmaessig erneut. Dabei wird die Schnittstelle auch ohne Link/Carrier mit `ip link set dev <iface> up` aktiviert, damit ein direkt per Kabel angeschlossener PC die Backup-IP erreichen kann, sobald der Link steht.
 

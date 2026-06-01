@@ -146,6 +146,7 @@ function buildNetworkCommands(network = {}) {
   });
 
   if (mainStaticEnabled) {
+    commands.push(flushIpv4Command(iface));
     commands.push(...staticIpCommands(iface, main.address, main.gateway));
   }
 
@@ -209,15 +210,27 @@ function buildNetworkCommands(network = {}) {
     args: ['connection', 'up', mainConnection]
   });
 
-  if (backupEnabled) {
+  if (backupEnabled && !mainStaticEnabled) {
     commands.push(...backupIpCommands(iface, backup.address, { includeLinkUp: false }));
   }
 
   if (mainStaticEnabled) {
+    commands.push(flushIpv4Command(iface));
     commands.push(...staticIpCommands(iface, main.address, main.gateway));
+    if (backupEnabled) {
+      commands.push(...backupIpCommands(iface, backup.address, { includeLinkUp: false }));
+    }
   }
 
   return commands;
+}
+
+function flushIpv4Command(iface) {
+  return {
+    label: 'DHCP/IPv4-Adressen fuer statisch entfernen',
+    bin: 'ip',
+    args: ['addr', 'flush', 'dev', iface, 'scope', 'global']
+  };
 }
 
 function backupIpCommands(iface, address, options = {}) {
