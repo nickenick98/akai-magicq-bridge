@@ -573,6 +573,36 @@
     bumpView();
   }
 
+  function resetBulkState() {
+    selection = [];
+    quickMapEnabled = false;
+    bulkTargetEnabled = false;
+    bulkLedEnabled = false;
+    selected = null;
+    editor = null;
+  }
+
+  function finishBulkEdit() {
+    resetBulkState();
+    multiSelect = false;
+    bumpView();
+  }
+
+  function cancelBulkEdit() {
+    finishBulkEdit();
+    notice = 'Mehrfachauswahl abgebrochen.';
+  }
+
+  function toggleMultiSelect() {
+    if (multiSelect) {
+      cancelBulkEdit();
+      return;
+    }
+    resetBulkState();
+    multiSelect = true;
+    bumpView();
+  }
+
   function isSelectedBulk(type, value) {
     return selection.some((item) => item.key === selectionKey(type, value));
   }
@@ -763,9 +793,7 @@
     config = { ...config, mappings: data.mappings };
     notice = `${changed.length} Mappings gespeichert.`;
     await api('/api/led/refresh', { method: 'POST' });
-    selection = [];
-    multiSelect = false;
-    bumpView();
+    finishBulkEdit();
   }
 
   function quickMapSelection(items = selection, settings = quickMap) {
@@ -841,9 +869,7 @@
     const data = await response.json();
     config = { ...config, mappings: data.mappings };
     notice = `Quick Mapping gespeichert: ${changed.length} Elemente ab Executor ${start}.`;
-    selection = [];
-    multiSelect = false;
-    bumpView();
+    finishBulkEdit();
   }
 
   function mergeBulkTarget(current, bulk) {
@@ -1112,7 +1138,7 @@
               <button class:current={activeLayer === 'normal'} on:click={() => setLayer('normal')}>Seite 1</button>
               <button class:current={activeLayer === 'shift'} on:click={() => setLayer('shift')}>Shift Seite 2</button>
             </div>
-            <button class:current={multiSelect} class="secondary" on:click={() => (multiSelect = !multiSelect)}>Mehrfach</button>
+            <button class:current={multiSelect} class="secondary" on:click={toggleMultiSelect}>Mehrfach</button>
           </div>
         </div>
 
@@ -1167,7 +1193,13 @@
         {#if notice}<p class="notice">{notice}</p>{/if}
 
         {#if multiSelect}
-          <div class="bulk-head"><strong>{selection.length} ausgewaehlt</strong><button class="secondary" on:click={() => (selection = [])}>Leeren</button></div>
+          <div class="bulk-head">
+            <strong>{selection.length} ausgewaehlt</strong>
+            <div class="bulk-actions">
+              <button class="secondary" on:click={() => (selection = [])}>Leeren</button>
+              <button class="danger" on:click={cancelBulkEdit}>Abbruch</button>
+            </div>
+          </div>
           <div class="bulk-options">
             <label class="checkbox-row">
               <input type="checkbox" bind:checked={quickMapEnabled} />
@@ -1536,6 +1568,7 @@
   @keyframes led-pulse { 0%,100% { background: var(--effect-color); filter: brightness(.58); } 50% { background: var(--effect-color); filter: brightness(1.35); } }
   .editor { display: grid; align-content: start; gap: 12px; }
   .bulk-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+  .bulk-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
   .bulk-options { display: grid; grid-template-columns: repeat(3, minmax(120px, 1fr)); gap: 8px; }
   .quick-map { display: grid; gap: 12px; padding: 12px; border: 1px solid #2d372f; border-radius: 8px; background: #111612; }
   .quick-map-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
