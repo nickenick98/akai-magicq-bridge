@@ -143,7 +143,7 @@
   $: shiftNote = apc.shiftNote ?? 122;
   $: quickMapItems = quickMapSelection(selection, quickMap);
   $: quickMapCanSave = quickMapItems.length > 0;
-  $: bulkApplyEnabled = selection.length > 0 && (bulkTargetEnabled || bulkLedEnabled);
+  $: bulkApplyEnabled = selection.length > 0 && (bulkTargetEnabled || bulkLedEnabled || (quickMapEnabled && quickMapCanSave));
 
   onMount(async () => {
     await loadInitial();
@@ -783,18 +783,20 @@
     bumpView();
   }
 
-  async function applyBulkLed() {
-    if (!bulkTargetEnabled && !bulkLedEnabled) {
-      notice = 'Bitte Zieltyp oder Farbe/LED anhaken.';
+  async function applyBulkEdit() {
+    if (!quickMapEnabled && !bulkTargetEnabled && !bulkLedEnabled) {
+      notice = 'Bitte Quick Mapping, Zieltyp oder Farbe/LED anhaken.';
       return;
     }
 
     const changed = [];
     const mappings = [...(config.mappings || [])];
+    const quickIndexByKey = new Map(quickMapItems.map((item, index) => [item.key, index]));
 
     for (const item of selection) {
       const mapping = withDefaults(mappingFor(item.type, item.value, item.layer) || createMapping(item.type, item.value, item.layer), item.type, item.value);
       let changedItem = false;
+
       if (bulkTargetEnabled) {
         mapping.target = mergeBulkTarget(mapping.target || {}, bulkTarget);
         changedItem = true;
@@ -802,6 +804,12 @@
           mapping.led = { ...(mapping.led || {}), offColor: 0, offMode: 'off', onColor: 0, activeMode: 'off' };
         }
       }
+
+      if (quickMapEnabled && quickIndexByKey.has(item.key)) {
+        mapping.target = prepareTargetForType({ ...(mapping.target || {}), ...quickMapTargetFor(item, quickIndexByKey.get(item.key), quickMap) });
+        changedItem = true;
+      }
+
       if (bulkLedEnabled && item.type !== 'fader' && mapping.target.type !== 'disabled') {
         mapping.led = { ...(mapping.led || {}), ...bulkLed };
         changedItem = true;
@@ -877,46 +885,6 @@
     if (target.type === 'magicq-executor-fader') return `Fader ${target.page}/${target.executor}`;
     if (target.action === 'set-level') return `Button ${target.page}/${target.executor} ${target.value}%`;
     return `Button ${target.page}/${target.executor} ${target.action || 'toggle'}`;
-  }
-
-  function upsertMappingList(mappings, mapping) {
-    const sourceKey = mapping.source?.type === 'fader' ? 'cc' : 'note';
-    const sourceShift = mapping.source?.type === 'fader' ? false : Boolean(mapping.source?.shift);
-    const index = mappings.findIndex(
-      (item) =>
-        item.source?.type === mapping.source?.type &&
-        item.source?.[sourceKey] === mapping.source?.[sourceKey] &&
-        (mapping.source?.type === 'fader' || Boolean(item.source?.shift) === sourceShift)
-    );
-    if (index >= 0) mappings[index] = mapping;
-    else mappings.push(mapping);
-  }
-
-  async function applyQuickMap() {
-    const items = quickMapItems;
-    if (!items.length) {
-      notice = 'Keine Pads, Buttons oder Fader in der Auswahl.';
-      return;
-    }
-
-    const changed = [];
-    const mappings = [...(config.mappings || [])];
-    const start = Math.max(1, Number(quickMap.start) || 1);
-
-    items.forEach((item, index) => {
-      const mapping = withDefaults(mappingFor(item.type, item.value, item.layer) || createMapping(item.type, item.value, item.layer), item.type, item.value);
-      mapping.target = prepareTargetForType({ ...(mapping.target || {}), ...quickMapTargetFor(item, index, quickMap) });
-      upsertMappingList(mappings, mapping);
-      changed.push(mapping);
-    });
-
-    config = { ...config, mappings };
-    bumpView();
-    const response = await api('/api/mappings/bulk', { method: 'POST', body: { mappings: changed } });
-    const data = await response.json();
-    config = { ...config, mappings: data.mappings };
-    notice = `Quick Mapping gespeichert: ${changed.length} Elemente ab Executor ${start}.`;
-    finishBulkEdit();
   }
 
   function mergeBulkTarget(current, bulk) {
@@ -1273,7 +1241,6 @@
                 <strong>Quick Mapping</strong>
                 <span>Auswahlreihenfolge wird auf fortlaufende Executor gelegt.</span>
               </div>
-              <button disabled={!quickMapCanSave} on:click={applyQuickMap}>Quick Mapping speichern</button>
             </div>
             <div class="fields compact">
               <label>
@@ -1408,9 +1375,9 @@
               {@render LedControls(bulkLed, setBulkLed, 'pad')}
             </div>
           {/if}
-          {#if bulkTargetEnabled || bulkLedEnabled}
-            <button disabled={!bulkApplyEnabled} on:click={applyBulkLed}>Mehrfachauswahl speichern</button>
-          {:else if !quickMapEnabled}
+          {#if quickMapEnabled || bulkTargetEnabled || bulkLedEnabled}
+            <button disabled={!bulkApplyEnabled} on:click={applyBulkEdit}>Mehrfachauswahl speichern</button>
+          {:else}
             <p class="empty">Quick Mapping, Zieltyp oder Farbe/LED anhaken.</p>
           {/if}
         {:else if editor}
