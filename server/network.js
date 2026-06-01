@@ -33,11 +33,30 @@ async function applyNetworkConfig(config) {
   network.main = network.main || {};
   network.main.connection = network.main.connection || (await resolveConnectionName(network.interface || 'eth0'));
   const commands = buildNetworkCommands(network);
+  const errors = [];
+
   for (const command of commands) {
-    await run(command.bin, command.args);
+    try {
+      await run(command.bin, command.args);
+    } catch (error) {
+      errors.push(`${command.label}: ${error.message}`);
+    }
   }
 
-  return getNetworkStatus(config);
+  if (errors.length) {
+    const status = getNetworkStatus(config);
+    status.lastApply = {
+      ok: false,
+      errors,
+      backupApplied: commands.some((command) => command.label === 'Backup-IP setzen')
+    };
+    return status;
+  }
+
+  return {
+    ...getNetworkStatus(config),
+    lastApply: { ok: true, errors: [], backupApplied: commands.some((command) => command.label === 'Backup-IP setzen') }
+  };
 }
 
 async function applyBackupIp(config) {
@@ -57,14 +76,6 @@ function buildNetworkCommands(network = {}) {
   const iface = sanitizeInterface(network.interface || backup.interface || main.interface || 'eth0');
   const mainConnection = String(main.connection || iface).trim();
   const commands = [];
-
-  if (backup.enabled !== false && backup.address) {
-    commands.push({
-      label: 'Backup-IP setzen',
-      bin: 'ip',
-      args: ['addr', 'replace', String(backup.address), 'dev', iface]
-    });
-  }
 
   if (main.mode === 'static') {
     commands.push({
@@ -97,6 +108,14 @@ function buildNetworkCommands(network = {}) {
     bin: 'nmcli',
     args: ['connection', 'up', mainConnection]
   });
+
+  if (backup.enabled !== false && backup.address) {
+    commands.push({
+      label: 'Backup-IP setzen',
+      bin: 'ip',
+      args: ['addr', 'replace', String(backup.address), 'dev', iface]
+    });
+  }
 
   return commands;
 }

@@ -989,6 +989,9 @@
       {#if status.network?.commands?.length}
         <pre class="command-preview">{status.network.commands.map((command) => `${command.label}: ${command.bin} ${command.args.join(' ')}`).join('\n')}</pre>
       {/if}
+      {#if status.network?.lastApply?.errors?.length}
+        <pre class="command-preview error-preview">{status.network.lastApply.errors.join('\n')}</pre>
+      {/if}
     </section>
     {/if}
 
@@ -1319,6 +1322,7 @@
   .network-status { justify-content: flex-start; margin-bottom: 12px; }
   .network-fields { grid-template-columns: repeat(3, minmax(150px, 1fr)); }
   .command-preview { margin: 12px 0 0; padding: 12px; overflow: auto; border: 1px solid #263229; border-radius: 6px; background: #0d110f; color: #b8f36d; font-size: 12px; }
+  .error-preview { border-color: #6d3a32; color: #ffb8a8; }
   .ip-list { display: grid; grid-template-columns: repeat(3, minmax(180px, 1fr)); gap: 10px; }
   .ip-list div { border: 1px solid #2d372f; border-radius: 8px; background: #111612; padding: 10px; }
   .ip-list strong, .ip-list span { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
