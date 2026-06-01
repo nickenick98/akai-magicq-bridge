@@ -11,6 +11,7 @@ function getNetworkStatus(config) {
     error = err.message;
   }
   const backupAddress = String(network.backup?.address || '').trim();
+  const mainAddress = String(network.main?.address || '').trim();
   const interfaces = listInterfaces();
   let commands = [];
   try {
@@ -33,6 +34,12 @@ function getNetworkStatus(config) {
       enabled: network.backup?.enabled !== false,
       applyOnStart: network.backup?.applyOnStart !== false,
       present: backupAddress ? interfaceHasAddress(interfaces, iface, backupAddress) : false
+    },
+    main: {
+      interface: iface,
+      address: mainAddress,
+      mode: network.main?.mode === 'static' ? 'static' : 'dhcp',
+      present: network.main?.mode === 'static' && mainAddress ? interfaceHasAddress(interfaces, iface, mainAddress) : false
     },
     commands,
     error
@@ -129,10 +136,21 @@ function buildNetworkCommands(network = {}) {
   const mainConnection = String(main.connection || iface).trim();
   const backupEnabled = backup.enabled !== false && backup.address;
   const addresses = formatMainAddresses(main, backupEnabled ? backup.address : '');
+  const mainStaticEnabled = main.mode === 'static' && main.address;
   const commands = [];
 
+  commands.push({
+    label: 'Interface aktivieren',
+    bin: 'ip',
+    args: ['link', 'set', 'dev', iface, 'up']
+  });
+
+  if (mainStaticEnabled) {
+    commands.push(...staticIpCommands(iface, main.address, main.gateway));
+  }
+
   if (backupEnabled) {
-    commands.push(...backupIpCommands(iface, backup.address));
+    commands.push(...backupIpCommands(iface, backup.address, { includeLinkUp: false }));
   }
 
   if (main.mode === 'static') {
@@ -192,25 +210,51 @@ function buildNetworkCommands(network = {}) {
   });
 
   if (backupEnabled) {
-    commands.push(...backupIpCommands(iface, backup.address));
+    commands.push(...backupIpCommands(iface, backup.address, { includeLinkUp: false }));
+  }
+
+  if (mainStaticEnabled) {
+    commands.push(...staticIpCommands(iface, main.address, main.gateway));
   }
 
   return commands;
 }
 
-function backupIpCommands(iface, address) {
-  return [
-    {
+function backupIpCommands(iface, address, options = {}) {
+  const commands = [];
+  if (options.includeLinkUp !== false) {
+    commands.push({
       label: 'Interface fuer Backup-IP aktivieren',
       bin: 'ip',
       args: ['link', 'set', 'dev', iface, 'up']
-    },
+    });
+  }
+  commands.push({
+    label: 'Backup-IP setzen',
+    bin: 'ip',
+    args: ['addr', 'replace', String(address), 'dev', iface]
+  });
+  return commands;
+}
+
+function staticIpCommands(iface, address, gateway) {
+  const commands = [
     {
-      label: 'Backup-IP setzen',
+      label: 'Statische Haupt-IP direkt setzen',
       bin: 'ip',
       args: ['addr', 'replace', String(address), 'dev', iface]
     }
   ];
+
+  if (gateway) {
+    commands.push({
+      label: 'Default-Gateway direkt setzen',
+      bin: 'ip',
+      args: ['route', 'replace', 'default', 'via', String(gateway), 'dev', iface]
+    });
+  }
+
+  return commands;
 }
 
 function listInterfaces() {

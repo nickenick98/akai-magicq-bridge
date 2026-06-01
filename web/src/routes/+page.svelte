@@ -1133,6 +1133,9 @@
         <span class:ok={status.network?.supported} class="pill">Linux {status.network?.supported ? 'ok' : 'nur speichern'}</span>
         <span class:ok={!status.network?.requiresSudo} class="pill">Rechte {status.network?.requiresSudo ? 'sudo -n' : 'root'}</span>
         <span class:ok={status.network?.backup?.present} class="pill">Backup-IP {status.network?.backup?.present ? 'aktiv' : 'fehlt'}</span>
+        {#if status.network?.main?.mode === 'static'}
+          <span class:ok={status.network?.main?.present} class="pill">Haupt-IP {status.network?.main?.present ? 'aktiv' : 'fehlt'}</span>
+        {/if}
         <span class="pill">Host {status.network?.hostname || '-'}</span>
       </div>
       <div class="fields network-fields">
