@@ -1,4 +1,5 @@
 const EventEmitter = require('events');
+const { execFileSync } = require('child_process');
 
 let easymidi = null;
 let easymidiLoadError = null;
@@ -27,6 +28,13 @@ class MidiBridge extends EventEmitter {
     const force = Boolean(options.force);
     const now = Date.now();
     if (!force && now - this.deviceCacheAt < this.deviceCacheTtlMs) {
+      return this.deviceCache;
+    }
+
+    const alsaDevices = listAlsaDevices();
+    if (alsaDevices) {
+      this.deviceCache = alsaDevices;
+      this.deviceCacheAt = now;
       return this.deviceCache;
     }
 
@@ -199,6 +207,46 @@ function resolveMidiDeviceName(configuredName, available = []) {
     return apcDevice;
   }
   return configuredName ? '' : '';
+}
+
+function listAlsaDevices() {
+  if (process.platform !== 'linux') return null;
+
+  try {
+    const output = execFileSync('aconnect', ['-l'], {
+      encoding: 'utf8',
+      timeout: 2000,
+      stdio: ['ignore', 'pipe', 'ignore']
+    });
+    const ports = parseAconnectPorts(output);
+    return { inputs: ports, outputs: ports, source: 'alsa' };
+  } catch {
+    return null;
+  }
+}
+
+function parseAconnectPorts(output = '') {
+  const ports = [];
+  let client = null;
+  let clientName = '';
+
+  for (const line of output.split(/\r?\n/)) {
+    const clientMatch = line.match(/^client\s+(\d+):\s+'([^']+)'/);
+    if (clientMatch) {
+      client = clientMatch[1];
+      clientName = clientMatch[2].trim();
+      continue;
+    }
+
+    const portMatch = line.match(/^\s+(\d+)\s+'([^']+)'/);
+    if (client && portMatch) {
+      const port = portMatch[1];
+      const portName = portMatch[2].trim();
+      ports.push(`${clientName}:${portName} ${client}:${port}`);
+    }
+  }
+
+  return ports;
 }
 
 module.exports = {
