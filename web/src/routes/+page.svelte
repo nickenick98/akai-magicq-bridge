@@ -958,7 +958,7 @@
       </div>
       <div class="status-row network-status">
         <span class:ok={status.network?.supported} class="pill">Linux {status.network?.supported ? 'ok' : 'nur speichern'}</span>
-        <span class:ok={!status.network?.requiresRoot} class="pill">Rechte {status.network?.requiresRoot ? 'sudo/root noetig' : 'ok'}</span>
+        <span class:ok={!status.network?.requiresSudo} class="pill">Rechte {status.network?.requiresSudo ? 'sudo -n' : 'root'}</span>
         <span class="pill">Host {status.network?.hostname || '-'}</span>
       </div>
       <div class="fields network-fields">

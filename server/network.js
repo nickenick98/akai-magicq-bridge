@@ -16,6 +16,7 @@ function getNetworkStatus(config) {
     hostname: os.hostname(),
     supported: process.platform === 'linux',
     requiresRoot: process.platform === 'linux' && process.getuid && process.getuid() !== 0,
+    requiresSudo: process.platform === 'linux' && process.getuid && process.getuid() !== 0,
     config: network,
     interfaces: listInterfaces(),
     commands,

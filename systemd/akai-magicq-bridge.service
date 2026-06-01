@@ -4,10 +4,10 @@ After=network-online.target
 Wants=network-online.target
 
 [Service]
-WorkingDirectory=/home/pi/akai-magicq-bridge
+WorkingDirectory=/bridge/akai-magicq-bridge
 ExecStart=/usr/bin/node server/index.js
 Restart=always
-User=pi
+User=akai
 Environment=NODE_ENV=production
 Environment=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
