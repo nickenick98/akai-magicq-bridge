@@ -514,7 +514,7 @@
   }
 
   function syncedLedPhase(mode, clock) {
-    const blinkOn = mode !== 'blink' || Math.floor(clock / 500) % 2 === 0;
+    const blinkOn = mode !== 'blink' || Math.floor(clock / 250) % 2 === 0;
     const pulseCycle = (clock % 1000) / 1000;
     const pulseWave = (Math.sin(pulseCycle * Math.PI * 2 - Math.PI / 2) + 1) / 2;
     const pulseLevel = pulseWave * pulseWave * (3 - 2 * pulseWave);
