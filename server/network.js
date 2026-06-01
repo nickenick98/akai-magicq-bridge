@@ -31,8 +31,8 @@ function getNetworkStatus(config) {
     backup: {
       interface: iface,
       address: backupAddress,
-      enabled: network.backup?.enabled !== false,
-      applyOnStart: network.backup?.applyOnStart !== false,
+      enabled: true,
+      applyOnStart: true,
       present: backupAddress ? interfaceHasAddress(interfaces, iface, backupAddress) : false
     },
     main: {
@@ -93,7 +93,7 @@ async function applyBackupIp(config) {
   const backup = config.network?.backup || {};
   const main = config.network?.main || {};
   const mainStaticEnabled = main.mode === 'static' && main.address;
-  const backupRuntimeEnabled = backup.enabled !== false && backup.applyOnStart !== false && backup.address;
+  const backupRuntimeEnabled = Boolean(backup.address);
   if (!mainStaticEnabled && !backupRuntimeEnabled) {
     return getNetworkStatus(config);
   }
@@ -160,7 +160,7 @@ function buildNetworkCommands(network = {}) {
   const main = network.main || {};
   const iface = sanitizeInterface(network.interface || backup.interface || main.interface || 'eth0');
   const mainConnection = String(main.connection || iface).trim();
-  const backupEnabled = backup.enabled !== false && backup.address;
+  const backupEnabled = Boolean(backup.address);
   const addresses = formatMainAddresses(main, backupEnabled ? backup.address : '');
   const mainStaticEnabled = main.mode === 'static' && main.address;
   const commands = [];

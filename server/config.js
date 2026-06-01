@@ -235,10 +235,10 @@ function normalizeNetworkConfig(network = {}) {
   const next = deepMerge(defaultConfig.network, network);
   const interfaceName = String(next.interface || next.backup?.interface || next.main?.interface || 'eth0').trim() || 'eth0';
   next.interface = interfaceName;
-  next.backup.enabled = Boolean(next.backup.enabled);
-  next.backup.applyOnStart = next.backup.applyOnStart !== false;
+  next.backup.enabled = true;
+  next.backup.applyOnStart = true;
   next.backup.interface = interfaceName;
-  next.backup.address = String(next.backup.address || '192.168.50.10/24').trim();
+  next.backup.address = String(next.backup.address || defaultConfig.network.backup.address).trim() || defaultConfig.network.backup.address;
   next.main.interface = interfaceName;
   next.main.connection = String(next.main.connection || '').trim();
   next.main.mode = next.main.mode === 'static' ? 'static' : 'dhcp';

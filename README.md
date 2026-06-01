@@ -173,7 +173,7 @@ Der Service beendet beim Stoppen offene Browser-/WebSocket-Verbindungen selbst. 
 Im Panel `Raspberry Netzwerk` kann eine feste Backup-IP und eine Haupt-IP konfiguriert werden.
 
 - Es gibt genau eine Schnittstelle fuer beide IPs, z. B. `eth0`.
-- Backup-IP: bleibt als Rettungsadresse auf dieser Schnittstelle, z. B. `192.168.50.10/24`.
+- Backup-IP: ist immer aktiv, darf nicht leer sein und bleibt als Rettungsadresse auf dieser Schnittstelle, z. B. `192.168.50.10/24`.
 - Haupt-IP: kann per DHCP laufen oder statisch gesetzt werden.
 - Unter Windows werden diese Werte nur gespeichert.
 - Unter Raspberry Pi OS/Linux wird die Haupt-IP ueber NetworkManager/`nmcli` gesetzt und die Backup-IP als zusaetzliche statische Adresse im NetworkManager-Profil hinterlegt und mit `ip addr replace` ergaenzt.

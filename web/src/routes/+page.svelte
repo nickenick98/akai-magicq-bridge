@@ -957,6 +957,9 @@
   }
 
   async function saveNetwork() {
+    config.network.backup.enabled = true;
+    config.network.backup.applyOnStart = true;
+    config.network.backup.address = normalizeBackupAddress(config.network.backup.address);
     const response = await api('/api/network', { method: 'POST', body: config.network });
     const data = await response.json();
     status = { ...status, network: data };
@@ -965,6 +968,9 @@
   }
 
   async function applyNetwork() {
+    config.network.backup.enabled = true;
+    config.network.backup.applyOnStart = true;
+    config.network.backup.address = normalizeBackupAddress(config.network.backup.address);
     const response = await api('/api/network/apply', { method: 'POST', body: config.network });
     const data = await response.json();
     status = { ...status, network: data.network };
@@ -1006,6 +1012,11 @@
         ...address
       }))
     );
+  }
+
+  function normalizeBackupAddress(value) {
+    const address = String(value || '').trim();
+    return address || '192.168.50.10/24';
   }
 
   async function saveMidiSelection() {
@@ -1140,15 +1151,7 @@
       </div>
       <div class="fields network-fields">
         <label><span>Schnittstelle fuer beide IPs</span><input bind:value={config.network.interface} placeholder="eth0" /></label>
-        <label class="checkbox-row">
-          <input type="checkbox" bind:checked={config.network.backup.enabled} />
-          <span>Backup-IP aktiv</span>
-        </label>
-        <label class="checkbox-row">
-          <input type="checkbox" bind:checked={config.network.backup.applyOnStart} />
-          <span>Beim Start setzen</span>
-        </label>
-        <label><span>Backup IP/CIDR</span><input bind:value={config.network.backup.address} placeholder="192.168.50.10/24" /></label>
+        <label><span>Backup IP/CIDR immer aktiv</span><input bind:value={config.network.backup.address} required placeholder="192.168.50.10/24" on:blur={() => (config.network.backup.address = normalizeBackupAddress(config.network.backup.address))} /></label>
         <label><span>NM Connection optional</span><input bind:value={config.network.main.connection} placeholder="leer = automatisch" /></label>
         <label>
           <span>Haupt-IP Modus</span>
