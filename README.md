@@ -78,6 +78,21 @@ Eine Beispiel-Service-Datei liegt unter `systemd/akai-magicq-bridge.service`.
 
 ### Installation auf dem Raspberry Pi
 
+Eine komplette Schritt-fuer-Schritt-Anleitung fuer einen frischen Raspberry Pi liegt hier:
+
+```text
+docs/raspi-fresh-install.md
+```
+
+Kurzweg nach dem Klonen nach `/bridge/akai-magicq-bridge`:
+
+```bash
+cd /bridge/akai-magicq-bridge
+chmod +x scripts/install-raspi.sh
+./scripts/install-raspi.sh
+sudo reboot
+```
+
 Raspberry Pi OS Bookworm nutzt standardmaessig NetworkManager. Die Bridge erwartet Node.js 20 oder neuer.
 
 1. Systempakete installieren:
