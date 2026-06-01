@@ -1166,6 +1166,9 @@
       {#if status.network?.commands?.length}
         <pre class="command-preview">{status.network.commands.map((command) => `${command.label}: ${command.bin} ${command.args.join(' ')}`).join('\n')}</pre>
       {/if}
+      {#if error}
+        <pre class="command-preview error-preview">{error}</pre>
+      {/if}
       {#if status.network?.lastApply?.errors?.length}
         <pre class="command-preview error-preview">{status.network.lastApply.errors.join('\n')}</pre>
       {/if}

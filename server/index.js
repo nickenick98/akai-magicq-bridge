@@ -21,6 +21,8 @@ let lastMidiDeviceSignature = '';
 let lastMidiReconnectAttemptAt = 0;
 let lastMidiWatchReportAt = 0;
 let networkBackupApplying = false;
+let lastNetworkApply = null;
+let lastNetworkBackupApply = null;
 
 const app = express();
 const server = http.createServer(app);
@@ -76,7 +78,11 @@ function status() {
   return {
     midi: midi.getStatus(),
     osc: osc.getStatus(),
-    network: getNetworkStatus(config),
+    network: {
+      ...getNetworkStatus(config),
+      ...(lastNetworkApply ? { lastApply: lastNetworkApply } : {}),
+      ...(lastNetworkBackupApply ? { lastBackupApply: lastNetworkBackupApply } : {})
+    },
     devices: midi.listDevices(),
     state: config.state || { faders: {}, currentPage: 1 },
     executorState,
@@ -430,6 +436,10 @@ app.post('/api/network/apply', async (req, res) => {
     if (networkStatus.config?.main?.connection) {
       config = updateConfig({ network: networkStatus.config });
     }
+    lastNetworkApply = networkStatus.lastApply || null;
+    if (lastNetworkApply?.errors?.length) {
+      reportError(new Error(lastNetworkApply.errors.join('; ')), 'network');
+    }
     startNetworkBackupTimer();
     broadcast('status', status());
     res.json({
@@ -439,6 +449,7 @@ app.post('/api/network/apply', async (req, res) => {
     });
   } catch (error) {
     reportError(error, 'network');
+    lastNetworkApply = { ok: false, errors: [error.message], at: new Date().toISOString() };
     res.status(500).json({ ok: false, error: error.message, network: getNetworkStatus(config) });
   }
 });
@@ -706,6 +717,7 @@ async function startNetworkBackup() {
   networkBackupApplying = true;
   try {
     const networkStatus = await applyBackupIp(config);
+    lastNetworkBackupApply = networkStatus?.lastBackupApply || null;
     if (networkStatus?.lastBackupApply && !networkStatus.lastBackupApply.ok) {
       reportError(new Error(networkStatus.lastBackupApply.errors.join('; ')), 'network-backup');
     }
