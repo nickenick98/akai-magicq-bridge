@@ -86,6 +86,12 @@
     fader: ['disabled', 'magicq-executor-fader', 'magicq-playback-level', 'magicq-10scene']
   };
   const executorActions = ['toggle', 'flash', 'go', 'release', 'set-level'];
+  const quickMapTargetOptions = [
+    ['auto-executor', 'Auto Executor'],
+    ['magicq-executor-button', 'Executor Button / Level'],
+    ['magicq-executor-fader', 'Executor Fader'],
+    ['disabled', 'Aus / deaktiviert']
+  ];
   const playbackActions = ['go', 'pause', 'release'];
   const flashActions = ['momentary', 'toggle', 'on', 'off'];
   const dboActions = ['toggle', 'on', 'off'];
@@ -112,7 +118,7 @@
   let bulkLed = { offColor: 5, offMode: 'solid', onColor: 21, activeMode: 'solid' };
   let bulkTargetEnabled = false;
   let bulkTarget = { type: 'disabled', action: 'off' };
-  let quickMap = { page: 1, start: 1, action: 'toggle' };
+  let quickMap = { targetType: 'auto-executor', page: 1, start: 1, action: 'toggle' };
 
   let live = {
     notes: {},
@@ -133,6 +139,8 @@
   $: controls = apc.controlNotes || Array.from({ length: 8 }, (_, index) => 100 + index);
   $: faders = apc.faderCcs || Array.from({ length: 9 }, (_, index) => 48 + index);
   $: shiftNote = apc.shiftNote ?? 122;
+  $: quickMapItems = quickMapSelection();
+  $: quickMapCanSave = quickMapItems.length > 0;
 
   onMount(async () => {
     await loadInitial();
@@ -598,7 +606,7 @@
   }
 
   function setQuickMap(key, value) {
-    quickMap = { ...quickMap, [key]: key === 'action' ? value : Math.max(1, Number(value) || 1) };
+    quickMap = { ...quickMap, [key]: key === 'action' || key === 'targetType' ? value : Math.max(1, Number(value) || 1) };
   }
 
   function setTarget(key, value) {
@@ -744,7 +752,7 @@
   }
 
   function quickMapSelection() {
-    return selection.filter((item) => item.type !== 'shift');
+    return selection.filter((item) => item.type !== 'shift' && Boolean(quickMapTargetFor(item, 0)));
   }
 
   function sourceLabel(item) {
@@ -753,6 +761,30 @@
     if (item.type === 'control') return `C${controls.indexOf(item.value) + 1}`;
     if (item.type === 'fader') return `F${faders.indexOf(item.value) + 1}`;
     return item.type;
+  }
+
+  function quickMapTargetFor(item, index) {
+    const targetType = quickMap.targetType || 'auto-executor';
+    const page = Math.max(1, Number(quickMap.page) || 1);
+    const executor = Math.max(1, Number(quickMap.start) || 1) + index;
+    if (targetType === 'disabled') return { type: 'disabled', action: 'off' };
+    if (targetType === 'auto-executor') {
+      return item.type === 'fader'
+        ? { type: 'magicq-executor-fader', page, executor }
+        : { type: 'magicq-executor-button', page, executor, action: quickMap.action || 'toggle' };
+    }
+    if (!targetTypeAllowed(item.type, targetType)) return null;
+    if (targetType === 'magicq-executor-fader') return { type: targetType, page, executor };
+    if (targetType === 'magicq-executor-button') return { type: targetType, page, executor, action: quickMap.action || 'toggle' };
+    return null;
+  }
+
+  function quickMapDestinationLabel(item, index) {
+    const target = quickMapTargetFor(item, index);
+    if (!target) return 'nicht moeglich';
+    if (target.type === 'disabled') return 'Aus';
+    if (target.type === 'magicq-executor-fader') return `Fader ${target.page}/${target.executor}`;
+    return `Button ${target.page}/${target.executor}`;
   }
 
   function upsertMappingList(mappings, mapping) {
@@ -769,7 +801,7 @@
   }
 
   async function applyQuickMap() {
-    const items = quickMapSelection();
+    const items = quickMapItems;
     if (!items.length) {
       notice = 'Keine Pads, Buttons oder Fader in der Auswahl.';
       return;
@@ -777,23 +809,11 @@
 
     const changed = [];
     const mappings = [...(config.mappings || [])];
-    const page = Math.max(1, Number(quickMap.page) || 1);
     const start = Math.max(1, Number(quickMap.start) || 1);
 
     items.forEach((item, index) => {
       const mapping = withDefaults(mappingFor(item.type, item.value, item.layer) || createMapping(item.type, item.value, item.layer), item.type, item.value);
-      const executor = start + index;
-      if (item.type === 'fader') {
-        mapping.target = prepareTargetForType({ ...(mapping.target || {}), type: 'magicq-executor-fader', page, executor });
-      } else {
-        mapping.target = prepareTargetForType({
-          ...(mapping.target || {}),
-          type: 'magicq-executor-button',
-          page,
-          executor,
-          action: quickMap.action || 'toggle'
-        });
-      }
+      mapping.target = prepareTargetForType({ ...(mapping.target || {}), ...quickMapTargetFor(item, index) });
       upsertMappingList(mappings, mapping);
       changed.push(mapping);
     });
@@ -1137,22 +1157,30 @@
                 <strong>Quick Mapping</strong>
                 <span>Auswahlreihenfolge wird auf fortlaufende Executor gelegt.</span>
               </div>
-              <button disabled={!quickMapSelection().length} on:click={applyQuickMap}>Quick Mapping speichern</button>
+              <button disabled={!quickMapCanSave} on:click={applyQuickMap}>Quick Mapping speichern</button>
             </div>
             <div class="fields compact">
-              <label><span>Page</span><input type="number" min="1" value={quickMap.page} on:input={(event) => setQuickMap('page', event.currentTarget.value)} /></label>
-              <label><span>Start Nummer</span><input type="number" min="1" value={quickMap.start} on:input={(event) => setQuickMap('start', event.currentTarget.value)} /></label>
               <label>
-                <span>Modus</span>
-                <select value={quickMap.action} on:change={(event) => setQuickMap('action', event.currentTarget.value)}>
-                  {#each executorActions as action}<option value={action}>{action}</option>{/each}
+                <span>Zieltyp</span>
+                <select value={quickMap.targetType} on:change={(event) => setQuickMap('targetType', event.currentTarget.value)}>
+                  {#each quickMapTargetOptions as [value, label]}<option value={value}>{label}</option>{/each}
                 </select>
               </label>
+              <label><span>Page</span><input type="number" min="1" value={quickMap.page} on:input={(event) => setQuickMap('page', event.currentTarget.value)} /></label>
+              <label><span>Start Nummer</span><input type="number" min="1" value={quickMap.start} on:input={(event) => setQuickMap('start', event.currentTarget.value)} /></label>
+              {#if quickMap.targetType === 'auto-executor' || quickMap.targetType === 'magicq-executor-button'}
+                <label>
+                  <span>Modus</span>
+                  <select value={quickMap.action} on:change={(event) => setQuickMap('action', event.currentTarget.value)}>
+                    {#each executorActions as action}<option value={action}>{action}</option>{/each}
+                  </select>
+                </label>
+              {/if}
             </div>
-            {#if quickMapSelection().length}
+            {#if quickMapItems.length}
               <div class="quick-map-preview">
-                {#each quickMapSelection() as item, index}
-                  <span>{index + 1}. {sourceLabel(item)} -> Exec {Number(quickMap.start || 1) + index}</span>
+                {#each quickMapItems as item, index}
+                  <span>{index + 1}. {sourceLabel(item)} -> {quickMapDestinationLabel(item, index)}</span>
                 {/each}
               </div>
             {:else}
