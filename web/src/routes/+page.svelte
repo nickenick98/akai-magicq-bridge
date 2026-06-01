@@ -120,7 +120,7 @@
   let bulkLedEnabled = false;
   let bulkTargetEnabled = false;
   let bulkTarget = { type: 'disabled', action: 'off' };
-  let quickMap = { targetType: 'auto-executor', page: 1, start: 1, action: 'toggle' };
+  let quickMap = { targetType: 'auto-executor', page: 1, start: 1, action: 'toggle', value: 100 };
 
   let live = {
     notes: {},
@@ -516,11 +516,43 @@
 
   function readout(type, value) {
     const mapping = mappingFor(type, value);
+    if (!mapping) return 'kein map';
     if (mapping?.target?.type === 'disabled') return 'aus';
-    if (type === 'fader') return faderRaw(value);
+    const target = targetReadout(mapping);
+    if (type === 'fader') return `${target} ${faderLevel(value)}%`;
     const state = ledState(type, value);
-    if (!state.hasMapping) return 'kein LED';
-    return `${state.active ? 'A' : 'O'} ${state.color ?? 0} ${state.mode || 'solid'}`;
+    const led = ledReadout(type, mapping, state);
+    return `${target} ${led}`;
+  }
+
+  function targetReadout(mapping) {
+    const target = mapping?.target || {};
+    if (target.type === 'magicq-executor-button') {
+      const action = target.action === 'set-level' ? `${target.value ?? 100}%` : target.action || 'toggle';
+      return `E${target.page || 1}/${target.executor || 1} ${action}`;
+    }
+    if (target.type === 'magicq-executor-fader') return `F${target.page || 1}/${target.executor || 1}`;
+    if (target.type === 'magicq-executor-adjust') return `E${target.page || 1}/${target.executor || 1} ${target.amount ?? 10}`;
+    if (target.type === 'magicq-playback-level') return `PB${target.playback || 1} ${target.value ?? 100}%`;
+    if (target.type === 'magicq-playback-action') return `PB${target.playback || 1} ${target.action || 'go'}`;
+    if (target.type === 'magicq-playback-flash') return `PB${target.playback || 1} flash`;
+    if (target.type === 'magicq-playback-adjust') return `PB${target.playback || 1} ${target.amount ?? 10}`;
+    if (target.type === 'magicq-playback-jump') return `PB${target.playback || 1} cue ${target.cue ?? 1}`;
+    if (target.type === 'magicq-10scene') return `10S ${target.zone || 1}/${target.item || 1}`;
+    if (target.type === 'magicq-dbo') return `DBO ${target.action || 'toggle'}`;
+    if (target.type === 'magicq-swap') return `Swap ${target.mode || 'normal'}`;
+    if (target.type === 'magicq-rpc') return 'RPC';
+    if (target.type === 'special') return `Spez ${target.action || ''}`.trim();
+    return target.type || 'map';
+  }
+
+  function ledReadout(type, mapping, state) {
+    if (type === 'scene' || type === 'control' || type === 'shift') {
+      const led = mapping?.led || {};
+      return `${state.active ? 'A' : 'O'} ${led.offMode || 'off'}/${led.activeMode || 'solid'}`;
+    }
+    const led = mapping?.led || {};
+    return `${led.offColor ?? 0}/${led.onColor ?? 21} ${state.active ? led.activeMode || 'solid' : led.offMode || 'off'}`;
   }
 
   function faderRaw(cc) {
@@ -816,11 +848,25 @@
     if (targetType === 'auto-executor') {
       return item.type === 'fader'
         ? { type: 'magicq-executor-fader', page, executor }
-        : { type: 'magicq-executor-button', page, executor, action: settings.action || 'toggle' };
+        : {
+            type: 'magicq-executor-button',
+            page,
+            executor,
+            action: settings.action || 'toggle',
+            value: settings.action === 'set-level' ? Math.max(0, Math.min(100, Number(settings.value) || 0)) : 100
+          };
     }
     if (!targetTypeAllowed(item.type, targetType)) return null;
     if (targetType === 'magicq-executor-fader') return { type: targetType, page, executor };
-    if (targetType === 'magicq-executor-button') return { type: targetType, page, executor, action: settings.action || 'toggle' };
+    if (targetType === 'magicq-executor-button') {
+      return {
+        type: targetType,
+        page,
+        executor,
+        action: settings.action || 'toggle',
+        value: settings.action === 'set-level' ? Math.max(0, Math.min(100, Number(settings.value) || 0)) : 100
+      };
+    }
     return null;
   }
 
@@ -829,7 +875,8 @@
     if (!target) return 'nicht moeglich';
     if (target.type === 'disabled') return 'Aus';
     if (target.type === 'magicq-executor-fader') return `Fader ${target.page}/${target.executor}`;
-    return `Button ${target.page}/${target.executor}`;
+    if (target.action === 'set-level') return `Button ${target.page}/${target.executor} ${target.value}%`;
+    return `Button ${target.page}/${target.executor} ${target.action || 'toggle'}`;
   }
 
   function upsertMappingList(mappings, mapping) {
@@ -983,8 +1030,13 @@
 
   async function deleteMapping() {
     if (!editor?.id) return;
-    const response = await api(`/api/mappings/${encodeURIComponent(editor.id)}`, { method: 'DELETE' });
+    const offMapping = withDefaults(editor, selected?.type || editor.source?.type || 'pad', selected?.value ?? editor.source?.note ?? editor.source?.cc ?? 0);
+    offMapping.target = { ...(offMapping.target || {}), type: 'disabled', action: 'off' };
+    offMapping.led = { ...(offMapping.led || {}), offColor: 0, offMode: 'off', onColor: 0, activeMode: 'off' };
+    const response = await api('/api/mappings', { method: 'POST', body: offMapping });
     config = { ...config, mappings: await response.json() };
+    await api('/api/led/refresh', { method: 'POST' });
+    notice = 'Mapping auf Aus gesetzt.';
     editor = null;
     selected = null;
     bumpView();
@@ -1187,7 +1239,7 @@
       <section class="editor">
         <div class="section-head">
           <h2>{multiSelect ? 'Mehrfach bearbeiten' : 'Mapping Editor'}</h2>
-          {#if editor && !multiSelect}<button class="danger" on:click={deleteMapping}>Loeschen</button>{/if}
+          {#if editor && !multiSelect}<button class="danger" on:click={deleteMapping}>Auf Aus setzen</button>{/if}
         </div>
         {#if error}<p class="error">{error}</p>{/if}
         {#if notice}<p class="notice">{notice}</p>{/if}
@@ -1239,6 +1291,9 @@
                     {#each executorActions as action}<option value={action}>{action}</option>{/each}
                   </select>
                 </label>
+                {#if quickMap.action === 'set-level'}
+                  <label><span>Level %</span><input type="number" min="0" max="100" value={quickMap.value} on:input={(event) => setQuickMap('value', event.currentTarget.value)} /></label>
+                {/if}
               {/if}
             </div>
             {#if quickMapItems.length}
@@ -1555,7 +1610,7 @@
   .matrix button, .scenes button, .controls button, .faders button { position: relative; display: grid; align-content: center; justify-items: center; gap: 3px; min-width: 0; aspect-ratio: 1; padding: 0; background: var(--control-color); color: var(--control-text); border-color: rgba(255,255,255,.24); box-shadow: inset 0 -10px 18px rgba(0,0,0,.22); text-shadow: 0 1px 3px rgba(0,0,0,.45); }
   .faders button { aspect-ratio: .55; align-content: space-between; padding: 9px 0; }
   .main { font-size: 13px; font-weight: 950; line-height: 1; }
-  .readout { max-width: calc(100% - 6px); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; border-radius: 4px; background: rgba(0,0,0,.55); color: #fff; padding: 2px 3px; font-size: 9px; font-weight: 900; line-height: 1.1; text-shadow: none; }
+  .readout { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; max-width: calc(100% - 6px); max-height: 2.4em; overflow: hidden; white-space: normal; word-break: break-word; border-radius: 4px; background: rgba(0,0,0,.55); color: #fff; padding: 2px 3px; font-size: 8.5px; font-weight: 900; line-height: 1.1; text-shadow: none; }
   .fader-value { display: grid; place-items: center; min-width: 28px; min-height: 28px; border-radius: 999px; background: #101412; color: #b8f36d; font-size: 12px; }
   .faders small { font-size: 10px; opacity: .86; }
   button.active { filter: brightness(1.25) saturate(1.2); box-shadow: 0 0 18px var(--effect-color), inset 0 -10px 18px rgba(0,0,0,.22); }
