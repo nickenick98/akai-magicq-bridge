@@ -1,5 +1,6 @@
 const EventEmitter = require('events');
 const { execFileSync } = require('child_process');
+const fs = require('fs');
 
 let easymidi = null;
 let easymidiLoadError = null;
@@ -22,6 +23,9 @@ class MidiBridge extends EventEmitter {
     this.deviceCache = { inputs: [], outputs: [] };
     this.deviceCacheAt = 0;
     this.deviceCacheTtlMs = Number(config.midi?.deviceCacheTtlMs || 3000);
+    this.connectedAt = '';
+    this.lastEventAt = '';
+    this.lastError = '';
   }
 
   listDevices(options = {}) {
@@ -100,14 +104,18 @@ class MidiBridge extends EventEmitter {
       if (inputName) {
         this.input = new easymidi.Input(inputName);
         this.inputName = inputName;
+        this.connectedAt = new Date().toISOString();
         this.bindInput();
       }
 
       if (outputName) {
         this.output = new easymidi.Output(outputName);
         this.outputName = outputName;
+        this.connectedAt = this.connectedAt || new Date().toISOString();
       }
+      this.lastError = '';
     } catch (error) {
+      this.lastError = error.message;
       this.emit('error', error);
       this.emit('status', this.getStatus(error));
       return this.getStatus(error);
@@ -119,14 +127,16 @@ class MidiBridge extends EventEmitter {
 
   bindInput() {
     const forward = (eventName) => (message) => {
+      const at = new Date().toISOString();
       const normalized = normalizeMidiEvent(eventName, message);
       if (normalized.note === this.config.apc.shiftNote) {
         this.shiftActive = normalized.event === 'noteon' && normalized.velocity > 0;
       }
+      this.lastEventAt = at;
       this.emit('midi', {
         ...normalized,
         shift: this.shiftActive,
-        at: new Date().toISOString()
+        at
       });
     };
 
@@ -157,6 +167,7 @@ class MidiBridge extends EventEmitter {
     this.inputName = '';
     this.outputName = '';
     this.shiftActive = false;
+    this.connectedAt = '';
   }
 
   sendNote(note, velocity, channel = 0) {
@@ -173,6 +184,10 @@ class MidiBridge extends EventEmitter {
       inputConnected: Boolean(this.input),
       outputConnected: Boolean(this.output),
       shiftActive: this.shiftActive,
+      connectedAt: this.connectedAt || undefined,
+      lastEventAt: this.lastEventAt || undefined,
+      hardware: getMidiHardwarePresence(this.deviceCache),
+      lastError: this.lastError || undefined,
       error: error ? error.message : undefined
     };
   }
@@ -202,11 +217,48 @@ function normalizeMidiEvent(eventName, message) {
 
 function resolveMidiDeviceName(configuredName, available = []) {
   if (configuredName && available.includes(configuredName)) return configuredName;
-  const apcDevice = available.find((name) => /APC\s*Mini|APC mini mk2|APC/i.test(name));
-  if (apcDevice && (!configuredName || /APC\s*Mini|APC mini mk2|APC/i.test(configuredName))) {
+  const apcDevice = available.find((name) => isApcDeviceName(name));
+  if (apcDevice && (!configuredName || isApcDeviceName(configuredName))) {
     return apcDevice;
   }
   return configuredName ? '' : '';
+}
+
+function isApcDeviceName(name = '') {
+  return /APC\s*Mini|APC mini mk2|APC/i.test(String(name));
+}
+
+function getMidiHardwarePresence(devices = {}) {
+  const inputs = devices.inputs || [];
+  const outputs = devices.outputs || [];
+  const apcInputs = inputs.filter(isApcDeviceName);
+  const apcOutputs = outputs.filter(isApcDeviceName);
+  const linuxApcPresent = linuxApcHardwarePresent();
+  return {
+    apcPresent: apcInputs.length > 0 || apcOutputs.length > 0 || linuxApcPresent,
+    linuxApcPresent,
+    apcInputs,
+    apcOutputs
+  };
+}
+
+function linuxApcHardwarePresent() {
+  if (process.platform !== 'linux') return false;
+  const chunks = [];
+
+  try {
+    chunks.push(fs.readFileSync('/proc/asound/cards', 'utf8'));
+  } catch {
+    // Optional hardware hint.
+  }
+
+  try {
+    chunks.push(fs.readdirSync('/dev/snd/by-id').join('\n'));
+  } catch {
+    // Optional hardware hint.
+  }
+
+  return chunks.some((chunk) => isApcDeviceName(chunk));
 }
 
 function listAlsaDevices() {
@@ -251,6 +303,8 @@ function parseAconnectPorts(output = '') {
 
 module.exports = {
   MidiBridge,
+  getMidiHardwarePresence,
+  isApcDeviceName,
   normalizeMidiEvent,
   resolveMidiDeviceName
 };

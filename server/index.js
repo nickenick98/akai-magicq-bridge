@@ -5,7 +5,7 @@ const http = require('http');
 const { WebSocket, WebSocketServer } = require('ws');
 
 const { readConfig, readState, updateConfig, writeConfig, writeState } = require('./config');
-const { MidiBridge, resolveMidiDeviceName } = require('./midi');
+const { MidiBridge, getMidiHardwarePresence, isApcDeviceName, resolveMidiDeviceName } = require('./midi');
 const { OscBridge } = require('./osc');
 const { LedController } = require('./led');
 const { applyBackupIp, applyNetworkConfig, getNetworkStatus } = require('./network');
@@ -18,6 +18,7 @@ let ledRefreshTimer = null;
 let midiWatchTimer = null;
 let lastMidiDeviceSignature = '';
 let lastMidiReconnectAttemptAt = 0;
+let lastMidiWatchReportAt = 0;
 
 const app = express();
 const server = http.createServer(app);
@@ -525,13 +526,14 @@ function startMidiWatchTimer() {
     } catch (error) {
       reportError(error, 'midi-watch');
     }
-  }, Number(config.midi?.watchIntervalMs || 5000));
+  }, Number(config.midi?.watchIntervalMs || 1500));
 }
 
 function watchMidiDevices() {
   const devices = midi.listDevices({ force: true });
   const signature = midiDeviceSignature(devices);
   const devicesChanged = signature !== lastMidiDeviceSignature;
+  const hardware = getMidiHardwarePresence(devices);
   if (devicesChanged) {
     lastMidiDeviceSignature = signature;
   }
@@ -541,20 +543,35 @@ function watchMidiDevices() {
   const desiredOutput = resolveMidiDeviceName(config.midi?.output, devices.outputs);
   const currentInputMissing = current.inputConnected && current.input && !(devices.inputs || []).includes(current.input);
   const currentOutputMissing = current.outputConnected && current.output && !(devices.outputs || []).includes(current.output);
-  const deviceMissing = currentInputMissing || currentOutputMissing;
+  const currentApcConnected = isApcDeviceName(current.input) || isApcDeviceName(current.output);
+  const apcHardwareMissing = currentApcConnected && !hardware.apcPresent;
+  const linuxApcHardwareMissing = process.platform === 'linux' && currentApcConnected && !hardware.linuxApcPresent;
+  const deviceMissing = currentInputMissing || currentOutputMissing || apcHardwareMissing || linuxApcHardwareMissing;
   const shouldConnectInput = desiredInput && (!current.inputConnected || current.input !== desiredInput);
   const shouldConnectOutput = desiredOutput && (!current.outputConnected || current.output !== desiredOutput);
-  const shouldReconnect = currentInputMissing || currentOutputMissing || shouldConnectInput || shouldConnectOutput;
+  const shouldReconnect = deviceMissing || shouldConnectInput || shouldConnectOutput;
 
-  if (deviceMissing && (!desiredInput || !desiredOutput)) {
+  if (deviceMissing) {
     midi.close();
+    rememberMidiWatch('MIDI device disappeared, closing stale connection', {
+      input: current.input,
+      output: current.output,
+      currentInputMissing,
+      currentOutputMissing,
+      apcHardwareMissing,
+      linuxApcHardwareMissing,
+      hardware
+    });
     broadcast('status', status());
+  }
+
+  if (linuxApcHardwareMissing || (deviceMissing && (!desiredInput || !desiredOutput))) {
     return;
   }
 
   if (shouldReconnect) {
     const now = Date.now();
-    const reconnectInterval = Number(config.midi?.reconnectIntervalMs || 10000);
+    const reconnectInterval = Number(config.midi?.reconnectIntervalMs || 2000);
     if (now - lastMidiReconnectAttemptAt < reconnectInterval) {
       if (devicesChanged) broadcast('status', status());
       return;
@@ -571,6 +588,21 @@ function watchMidiDevices() {
   if (devicesChanged) {
     broadcast('status', status());
   }
+}
+
+function rememberMidiWatch(message, details = {}) {
+  const now = Date.now();
+  if (now - lastMidiWatchReportAt < 3000) return;
+  lastMidiWatchReportAt = now;
+  const data = {
+    source: 'midi-watch',
+    message,
+    details,
+    at: new Date().toISOString()
+  };
+  console.warn('[midi-watch]', message, details);
+  remember('errors', data);
+  broadcast('error', data);
 }
 
 function midiDeviceSignature(devices) {

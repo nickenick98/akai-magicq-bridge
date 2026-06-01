@@ -105,7 +105,10 @@ const defaultConfig = {
   },
   midi: {
     input: '',
-    output: ''
+    output: '',
+    watchIntervalMs: 1500,
+    reconnectIntervalMs: 2000,
+    deviceCacheTtlMs: 1000
   },
   network: {
     interface: 'eth0',
