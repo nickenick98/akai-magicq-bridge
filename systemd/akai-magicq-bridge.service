@@ -10,6 +10,7 @@ Restart=always
 User=akai
 Environment=NODE_ENV=production
 Environment=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+TimeoutStopSec=5
 
 [Install]
 WantedBy=multi-user.target

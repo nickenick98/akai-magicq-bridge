@@ -25,6 +25,7 @@ let networkBackupApplying = false;
 const app = express();
 const server = http.createServer(app);
 const wss = new WebSocketServer({ server, path: '/ws' });
+const httpSockets = new Set();
 const midi = new MidiBridge(config);
 const osc = new OscBridge(config);
 const led = new LedController(midi);
@@ -468,6 +469,11 @@ wss.on('connection', (socket) => {
   });
 });
 
+server.on('connection', (socket) => {
+  httpSockets.add(socket);
+  socket.on('close', () => httpSockets.delete(socket));
+});
+
 const staticDir = path.join(__dirname, '..', 'web', 'build');
 app.use(express.static(staticDir));
 app.get('*', (req, res, next) => {
@@ -490,7 +496,13 @@ server.listen(port, host, () => {
   console.log(`AKAI MagicQ bridge listening on http://${host}:${port}`);
 });
 
-function shutdown() {
+let shuttingDown = false;
+
+function shutdown(signal = 'SIGTERM') {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  console.log(`Shutting down AKAI MagicQ bridge (${signal})`);
+
   if (ledRefreshTimer) {
     clearInterval(ledRefreshTimer);
     ledRefreshTimer = null;
@@ -510,11 +522,63 @@ function shutdown() {
   led.stopAll();
   midi.close();
   osc.stop();
-  server.close(() => process.exit(0));
+  closeWebSockets();
+  closeHttpSockets();
+
+  const forceExitTimer = setTimeout(() => {
+    console.warn('Forced shutdown after timeout.');
+    process.exit(0);
+  }, Number(config.server.shutdownTimeoutMs || 2500));
+  forceExitTimer.unref?.();
+
+  wss.close(() => {
+    server.close(() => {
+      clearTimeout(forceExitTimer);
+      process.exit(0);
+    });
+  });
 }
 
-process.on('SIGINT', shutdown);
-process.on('SIGTERM', shutdown);
+function closeWebSockets() {
+  for (const client of wss.clients) {
+    try {
+      client.close(1001, 'server shutdown');
+      setTimeout(() => {
+        if (client.readyState !== WebSocket.CLOSED) client.terminate();
+      }, 500).unref?.();
+    } catch {
+      try {
+        client.terminate();
+      } catch {
+        // Ignore shutdown cleanup errors.
+      }
+    }
+  }
+}
+
+function closeHttpSockets() {
+  if (typeof server.closeIdleConnections === 'function') {
+    server.closeIdleConnections();
+  }
+  setTimeout(() => {
+    if (typeof server.closeAllConnections === 'function') {
+      server.closeAllConnections();
+    }
+  }, 750).unref?.();
+  for (const socket of httpSockets) {
+    try {
+      socket.end();
+      setTimeout(() => {
+        if (!socket.destroyed) socket.destroy();
+      }, 500).unref?.();
+    } catch {
+      // Ignore shutdown cleanup errors.
+    }
+  }
+}
+
+process.on('SIGINT', () => shutdown('SIGINT'));
+process.on('SIGTERM', () => shutdown('SIGTERM'));
 
 function startLedRefreshTimer() {
   if (ledRefreshTimer) clearInterval(ledRefreshTimer);

@@ -164,6 +164,8 @@ journalctl -u akai-magicq-bridge -f
 
 Nach einem Neustart startet die Bridge automatisch. Wenn `Beim Start setzen` aktiv ist, setzt sie zusaetzlich die Backup-IP auf derselben Schnittstelle.
 
+Der Service beendet beim Stoppen offene Browser-/WebSocket-Verbindungen selbst. Dadurch bleibt `systemctl stop akai-magicq-bridge` nicht an einer noch offenen Weboberflaeche haengen.
+
 ## Raspberry Pi Netzwerk
 
 Im Panel `Raspberry Netzwerk` kann eine feste Backup-IP und eine Haupt-IP konfiguriert werden.

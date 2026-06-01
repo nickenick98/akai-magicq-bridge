@@ -96,7 +96,8 @@ function createDefaultMappings() {
 const defaultConfig = {
   server: {
     host: '0.0.0.0',
-    port: 3001
+    port: 3001,
+    shutdownTimeoutMs: 2500
   },
   magicq: {
     ip: '192.168.178.50',
