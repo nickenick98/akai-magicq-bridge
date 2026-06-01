@@ -53,7 +53,11 @@ async function applyNetworkConfig(config) {
 
   const network = JSON.parse(JSON.stringify(config.network || {}));
   network.main = network.main || {};
-  network.main.connection = network.main.connection || (await resolveOrCreateConnectionName(network.interface || 'eth0'));
+  const iface = sanitizeInterface(network.interface || network.backup?.interface || network.main?.interface || 'eth0');
+  network.main.connection =
+    network.main.mode === 'static'
+      ? await resolveStaticConnectionName(iface, network.main.connection)
+      : network.main.connection || (await resolveOrCreateConnectionName(iface));
   const commands = buildNetworkCommands(network);
   const errors = [];
 
@@ -436,6 +440,40 @@ async function resolveOrCreateConnectionName(interfaceName) {
   } catch {
     return iface;
   }
+}
+
+async function resolveStaticConnectionName(interfaceName, preferredName = '') {
+  const iface = sanitizeInterface(interfaceName || 'eth0');
+  const active = await resolveActiveConnectionName(iface);
+  if (active) return active;
+
+  const preferred = String(preferredName || '').trim();
+  if (preferred && (await connectionExists(preferred))) return preferred;
+
+  return resolveOrCreateConnectionName(iface);
+}
+
+async function resolveActiveConnectionName(interfaceName) {
+  const iface = sanitizeInterface(interfaceName || 'eth0');
+  try {
+    const result = await run('nmcli', ['-g', 'GENERAL.CONNECTION', 'device', 'show', iface]);
+    const connection = String(result.stdout || '').trim();
+    if (connection && connection !== '--') return connection;
+  } catch {
+    // Fallback below.
+  }
+
+  try {
+    const result = await run('nmcli', ['-t', '-f', 'NAME,DEVICE', 'connection', 'show', '--active']);
+    for (const line of String(result.stdout || '').split(/\r?\n/)) {
+      const [name, device] = line.split(':');
+      if (device === iface && name) return name;
+    }
+  } catch {
+    // No active connection found.
+  }
+
+  return '';
 }
 
 async function connectionExists(name) {
