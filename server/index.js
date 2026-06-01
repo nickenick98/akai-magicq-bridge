@@ -17,6 +17,7 @@ let pendingConfigWrite = null;
 let ledRefreshTimer = null;
 let midiWatchTimer = null;
 let lastMidiDeviceSignature = '';
+let lastMidiReconnectAttemptAt = 0;
 
 const app = express();
 const server = http.createServer(app);
@@ -309,7 +310,7 @@ app.post('/api/backup/restore', (req, res) => {
 });
 
 app.get('/api/midi/devices', (req, res) => {
-  res.json(midi.listDevices());
+  res.json(midi.listDevices({ force: true }));
 });
 
 app.post('/api/midi/select', (req, res) => {
@@ -513,18 +514,18 @@ function startLedRefreshTimer() {
 
 function startMidiWatchTimer() {
   if (midiWatchTimer) clearInterval(midiWatchTimer);
-  lastMidiDeviceSignature = midiDeviceSignature(midi.listDevices());
+  lastMidiDeviceSignature = midiDeviceSignature(midi.listDevices({ force: true }));
   midiWatchTimer = setInterval(() => {
     try {
       watchMidiDevices();
     } catch (error) {
       reportError(error, 'midi-watch');
     }
-  }, Number(config.midi?.watchIntervalMs || 2000));
+  }, Number(config.midi?.watchIntervalMs || 5000));
 }
 
 function watchMidiDevices() {
-  const devices = midi.listDevices();
+  const devices = midi.listDevices({ force: true });
   const signature = midiDeviceSignature(devices);
   const devicesChanged = signature !== lastMidiDeviceSignature;
   if (devicesChanged) {
@@ -541,6 +542,13 @@ function watchMidiDevices() {
   const shouldReconnect = currentInputMissing || currentOutputMissing || shouldConnectInput || shouldConnectOutput;
 
   if (shouldReconnect) {
+    const now = Date.now();
+    const reconnectInterval = Number(config.midi?.reconnectIntervalMs || 10000);
+    if (now - lastMidiReconnectAttemptAt < reconnectInterval) {
+      if (devicesChanged) broadcast('status', status());
+      return;
+    }
+    lastMidiReconnectAttemptAt = now;
     const nextStatus = midi.connect(config);
     if (nextStatus.outputConnected) {
       refreshAllLeds();

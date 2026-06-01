@@ -18,28 +18,43 @@ class MidiBridge extends EventEmitter {
     this.inputName = '';
     this.outputName = '';
     this.shiftActive = false;
+    this.deviceCache = { inputs: [], outputs: [] };
+    this.deviceCacheAt = 0;
+    this.deviceCacheTtlMs = Number(config.midi?.deviceCacheTtlMs || 3000);
   }
 
-  listDevices() {
+  listDevices(options = {}) {
+    const force = Boolean(options.force);
+    const now = Date.now();
+    if (!force && now - this.deviceCacheAt < this.deviceCacheTtlMs) {
+      return this.deviceCache;
+    }
+
     if (!easymidi) {
-      return {
+      this.deviceCache = {
         inputs: [],
         outputs: [],
         error: easymidiLoadError ? easymidiLoadError.message : 'easymidi not available'
       };
+      this.deviceCacheAt = now;
+      return this.deviceCache;
     }
 
     try {
-      return {
+      this.deviceCache = {
         inputs: easymidi.getInputs(),
         outputs: easymidi.getOutputs()
       };
+      this.deviceCacheAt = now;
+      return this.deviceCache;
     } catch (error) {
-      return {
+      this.deviceCache = {
         inputs: [],
         outputs: [],
         error: error.message
       };
+      this.deviceCacheAt = now;
+      return this.deviceCache;
     }
   }
 
@@ -54,7 +69,7 @@ class MidiBridge extends EventEmitter {
       return this.getStatus(error);
     }
 
-    const devices = this.listDevices();
+    const devices = this.listDevices({ force: true });
     const inputName = config.midi.input || devices.inputs.find((name) => /APC Mini/i.test(name));
     const outputName = config.midi.output || devices.outputs.find((name) => /APC Mini/i.test(name));
 
