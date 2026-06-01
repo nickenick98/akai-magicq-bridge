@@ -84,6 +84,7 @@ class MidiBridge extends EventEmitter {
     const inputName = resolveMidiDeviceName(config.midi.input, devices.inputs);
     const outputName = resolveMidiDeviceName(config.midi.output, devices.outputs);
     const keepExisting = Boolean(options.keepExisting);
+    const force = Boolean(options.force);
 
     if (keepExisting) {
       const wantsInput = Boolean(config.midi.input) || Boolean(inputName);
@@ -98,17 +99,27 @@ class MidiBridge extends EventEmitter {
       }
     }
 
-    this.close();
+    const inputReusable = sameOpenPort(this.input, this.inputName, inputName);
+    const outputReusable = sameOpenPort(this.output, this.outputName, outputName);
+
+    if (!force && inputReusable && outputReusable) {
+      this.lastError = '';
+      this.emit('status', this.getStatus());
+      return this.getStatus();
+    }
+
+    if (!inputReusable) this.closeInput();
+    if (!outputReusable) this.closeOutput();
 
     try {
-      if (inputName) {
+      if (inputName && !this.input) {
         this.input = new easymidi.Input(inputName);
         this.inputName = inputName;
         this.connectedAt = new Date().toISOString();
         this.bindInput();
       }
 
-      if (outputName) {
+      if (outputName && !this.output) {
         this.output = new easymidi.Output(outputName);
         this.outputName = outputName;
         this.connectedAt = this.connectedAt || new Date().toISOString();
@@ -146,28 +157,42 @@ class MidiBridge extends EventEmitter {
   }
 
   close() {
+    this.closeInput();
+    this.closeOutput();
+    this.shiftActive = false;
+    this.connectedAt = '';
+  }
+
+  closeInput() {
     if (this.input) {
       try {
+        if (this.input._input?.removeAllListeners) this.input._input.removeAllListeners('message');
+        if (this.input.removeAllListeners) this.input.removeAllListeners();
         this.input.close();
       } catch (error) {
         this.emit('error', error);
+      } finally {
+        if (this.input) this.input._input = null;
       }
     }
 
+    this.input = null;
+    this.inputName = '';
+  }
+
+  closeOutput() {
     if (this.output) {
       try {
         this.output.close();
       } catch (error) {
         this.emit('error', error);
+      } finally {
+        if (this.output) this.output._output = null;
       }
     }
 
-    this.input = null;
     this.output = null;
-    this.inputName = '';
     this.outputName = '';
-    this.shiftActive = false;
-    this.connectedAt = '';
   }
 
   sendNote(note, velocity, channel = 0) {
@@ -190,6 +215,17 @@ class MidiBridge extends EventEmitter {
       lastError: this.lastError || undefined,
       error: error ? error.message : undefined
     };
+  }
+}
+
+function sameOpenPort(port, currentName, desiredName) {
+  if (!desiredName) return !port;
+  if (!port || currentName !== desiredName) return false;
+  if (typeof port.isPortOpen !== 'function') return true;
+  try {
+    return Boolean(port.isPortOpen());
+  } catch {
+    return false;
   }
 }
 
