@@ -180,6 +180,7 @@ Im Panel `Raspberry Netzwerk` kann eine feste Backup-IP und eine Haupt-IP konfig
 - Bei statischer Haupt-IP schaltet die Bridge DHCP ab, entfernt vorhandene globale IPv4-Adressen vom Interface und setzt danach nur Haupt-IP plus Backup-IP neu. Die Haupt-IP wird zusaetzlich sofort per `ip addr replace` und optional das Gateway per `ip route replace` gesetzt, damit die Adresse auch dann direkt aktiv wird, wenn NetworkManager den Reconnect nicht sauber schafft.
 - Wenn kein passendes NetworkManager-Profil vorhanden ist, legt die Bridge beim Anwenden ein Profil `akai-bridge-<interface>` an, z. B. `akai-bridge-eth0`.
 - Im statischen Modus verwendet die Bridge bevorzugt das aktuell aktive NetworkManager-Profil der Schnittstelle und stellt genau dieses Profil auf `manual`, damit kein altes DHCP-Profil weiter aktiv bleibt.
+- Beim Umschalten zurueck auf DHCP prueft die Bridge gespeicherte Connection-Namen und ersetzt ungueltige Namen wie `eth0` automatisch durch das aktive NetworkManager-Profil.
 - Wenn `Beim Start setzen` aktiv ist, setzt der Server die Backup-IP beim Start und danach regelmaessig erneut. Dabei wird die Schnittstelle auch ohne Link/Carrier mit `ip link set dev <iface> up` aktiviert, damit ein direkt per Kabel angeschlossener PC die Backup-IP erreichen kann, sobald der Link steht.
 - Im statischen Modus prueft der Refresh dabei auch, ob noch fremde/dynamische IPv4-Adressen sichtbar sind, und setzt dann nur Haupt-IP plus Backup-IP erneut.
 

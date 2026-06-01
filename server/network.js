@@ -54,10 +54,7 @@ async function applyNetworkConfig(config) {
   const network = JSON.parse(JSON.stringify(config.network || {}));
   network.main = network.main || {};
   const iface = sanitizeInterface(network.interface || network.backup?.interface || network.main?.interface || 'eth0');
-  network.main.connection =
-    network.main.mode === 'static'
-      ? await resolveStaticConnectionName(iface, network.main.connection)
-      : network.main.connection || (await resolveOrCreateConnectionName(iface));
+  network.main.connection = await resolveApplyConnectionName(iface, network.main.mode, network.main.connection);
   const commands = buildNetworkCommands(network);
   const errors = [];
 
@@ -440,6 +437,19 @@ async function resolveOrCreateConnectionName(interfaceName) {
   } catch {
     return iface;
   }
+}
+
+async function resolveApplyConnectionName(interfaceName, mode = 'dhcp', preferredName = '') {
+  const iface = sanitizeInterface(interfaceName || 'eth0');
+  if (mode === 'static') return resolveStaticConnectionName(iface, preferredName);
+
+  const preferred = String(preferredName || '').trim();
+  if (preferred && (await connectionExists(preferred))) return preferred;
+
+  const active = await resolveActiveConnectionName(iface);
+  if (active) return active;
+
+  return resolveOrCreateConnectionName(iface);
 }
 
 async function resolveStaticConnectionName(interfaceName, preferredName = '') {
