@@ -1618,8 +1618,8 @@
   button.active { filter: brightness(1.25) saturate(1.2); box-shadow: 0 0 18px var(--effect-color), inset 0 -10px 18px rgba(0,0,0,.22); }
   button.selected { outline: 4px solid #fff; outline-offset: 2px; }
   button.bulk { outline: 3px solid #b8f36d; outline-offset: 2px; }
-  .mode-blink { background: var(--blink-color) !important; filter: brightness(var(--blink-brightness)); }
-  .mode-pulse { background: var(--effect-color) !important; filter: brightness(var(--pulse-brightness)) saturate(1.18); box-shadow: 0 0 var(--pulse-shadow-size) var(--effect-color), inset 0 -10px 18px rgba(0,0,0,.22); }
+  button.mode-blink { background: var(--blink-color) !important; filter: brightness(var(--blink-brightness)) !important; }
+  button.mode-pulse { background: var(--effect-color) !important; filter: brightness(var(--pulse-brightness)) saturate(1.18) !important; box-shadow: 0 0 var(--pulse-shadow-size) var(--effect-color), inset 0 -10px 18px rgba(0,0,0,.22) !important; }
   .mode-off { background: #232c25 !important; color: #aebdae !important; }
   .editor { display: grid; align-content: start; gap: 12px; }
   .bulk-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
