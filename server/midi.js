@@ -69,8 +69,8 @@ class MidiBridge extends EventEmitter {
     }
 
     const devices = this.listDevices({ force: true });
-    const inputName = config.midi.input || devices.inputs.find((name) => /APC Mini/i.test(name));
-    const outputName = config.midi.output || devices.outputs.find((name) => /APC Mini/i.test(name));
+    const inputName = resolveMidiDeviceName(config.midi.input, devices.inputs);
+    const outputName = resolveMidiDeviceName(config.midi.output, devices.outputs);
     const keepExisting = Boolean(options.keepExisting);
 
     if (keepExisting) {
@@ -192,7 +192,17 @@ function normalizeMidiEvent(eventName, message) {
   };
 }
 
+function resolveMidiDeviceName(configuredName, available = []) {
+  if (configuredName && available.includes(configuredName)) return configuredName;
+  const apcDevice = available.find((name) => /APC\s*Mini|APC mini mk2|APC/i.test(name));
+  if (apcDevice && (!configuredName || /APC\s*Mini|APC mini mk2|APC/i.test(configuredName))) {
+    return apcDevice;
+  }
+  return configuredName ? '' : '';
+}
+
 module.exports = {
   MidiBridge,
-  normalizeMidiEvent
+  normalizeMidiEvent,
+  resolveMidiDeviceName
 };
