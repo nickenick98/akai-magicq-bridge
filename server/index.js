@@ -15,6 +15,8 @@ let config = readConfig();
 config.state = readState();
 let pendingConfigWrite = null;
 let ledRefreshTimer = null;
+let midiWatchTimer = null;
+let lastMidiDeviceSignature = '';
 
 const app = express();
 const server = http.createServer(app);
@@ -313,6 +315,7 @@ app.get('/api/midi/devices', (req, res) => {
 app.post('/api/midi/select', (req, res) => {
   config = updateConfig({ midi: { input: req.body.input || '', output: req.body.output || '' } });
   const midiStatus = midi.connect(config);
+  lastMidiDeviceSignature = midiDeviceSignature(midi.listDevices());
   broadcast('status', status());
   res.json({ config, status: midiStatus });
 });
@@ -466,6 +469,7 @@ app.get('*', (req, res, next) => {
 
 reconnect();
 startLedRefreshTimer();
+startMidiWatchTimer();
 startNetworkBackup();
 
 const port = Number(config.server.port || process.env.PORT || 3001);
@@ -478,6 +482,10 @@ function shutdown() {
   if (ledRefreshTimer) {
     clearInterval(ledRefreshTimer);
     ledRefreshTimer = null;
+  }
+  if (midiWatchTimer) {
+    clearInterval(midiWatchTimer);
+    midiWatchTimer = null;
   }
   if (pendingConfigWrite) {
     clearTimeout(pendingConfigWrite);
@@ -501,6 +509,63 @@ function startLedRefreshTimer() {
       reportError(error, 'led-refresh');
     }
   }, 1000);
+}
+
+function startMidiWatchTimer() {
+  if (midiWatchTimer) clearInterval(midiWatchTimer);
+  lastMidiDeviceSignature = midiDeviceSignature(midi.listDevices());
+  midiWatchTimer = setInterval(() => {
+    try {
+      watchMidiDevices();
+    } catch (error) {
+      reportError(error, 'midi-watch');
+    }
+  }, Number(config.midi?.watchIntervalMs || 2000));
+}
+
+function watchMidiDevices() {
+  const devices = midi.listDevices();
+  const signature = midiDeviceSignature(devices);
+  const devicesChanged = signature !== lastMidiDeviceSignature;
+  if (devicesChanged) {
+    lastMidiDeviceSignature = signature;
+  }
+
+  const current = midi.getStatus();
+  const desiredInput = resolveMidiDeviceName(config.midi?.input, devices.inputs, /APC Mini/i);
+  const desiredOutput = resolveMidiDeviceName(config.midi?.output, devices.outputs, /APC Mini/i);
+  const currentInputMissing = current.inputConnected && current.input && !(devices.inputs || []).includes(current.input);
+  const currentOutputMissing = current.outputConnected && current.output && !(devices.outputs || []).includes(current.output);
+  const shouldConnectInput = desiredInput && (!current.inputConnected || current.input !== desiredInput);
+  const shouldConnectOutput = desiredOutput && (!current.outputConnected || current.output !== desiredOutput);
+  const shouldReconnect = currentInputMissing || currentOutputMissing || shouldConnectInput || shouldConnectOutput;
+
+  if (shouldReconnect) {
+    const nextStatus = midi.connect(config);
+    if (nextStatus.outputConnected) {
+      refreshAllLeds();
+    }
+    broadcast('status', status());
+    return;
+  }
+
+  if (devicesChanged) {
+    broadcast('status', status());
+  }
+}
+
+function resolveMidiDeviceName(configuredName, available = [], fallbackPattern) {
+  if (configuredName && available.includes(configuredName)) return configuredName;
+  if (configuredName) return '';
+  return available.find((name) => fallbackPattern.test(name)) || '';
+}
+
+function midiDeviceSignature(devices) {
+  return JSON.stringify({
+    inputs: devices.inputs || [],
+    outputs: devices.outputs || [],
+    error: devices.error || ''
+  });
 }
 
 async function startNetworkBackup() {
