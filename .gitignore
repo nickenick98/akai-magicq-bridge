@@ -1,0 +1,10 @@
+node_modules/
+web/build/
+web/.svelte-kit/
+dist/
+.pkg-cache/
+*.log
+.env
+.server.pid
+server/state.json
+server/config.json

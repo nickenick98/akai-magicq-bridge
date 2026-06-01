@@ -1,0 +1,15 @@
+[Unit]
+Description=AKAI APC Mini MK2 MagicQ Bridge
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+WorkingDirectory=/home/pi/akai-magicq-bridge
+ExecStart=/usr/bin/node server/index.js
+Restart=always
+User=pi
+Environment=NODE_ENV=production
+Environment=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+[Install]
+WantedBy=multi-user.target

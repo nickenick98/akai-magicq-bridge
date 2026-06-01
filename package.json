@@ -1,0 +1,48 @@
+{
+  "name": "akai-magicq-bridge",
+  "version": "0.1.0",
+  "private": true,
+  "description": "AKAI APC Mini MK2 to ChamSys MagicQ OSC bridge",
+  "main": "server/index.js",
+  "bin": "server/index.js",
+  "workspaces": [
+    "web"
+  ],
+  "scripts": {
+    "dev": "concurrently \"npm run server:dev\" \"npm run web:dev\"",
+    "server:dev": "nodemon server/index.js",
+    "web:dev": "cd web && npm run dev",
+    "build": "cd web && npm run build",
+    "start": "node server/index.js",
+    "package:win": "node scripts/package-win.js"
+  },
+  "pkg": {
+    "scripts": [
+      "server/**/*.js",
+      "node_modules/@julusian/midi/**/*.js"
+    ],
+    "assets": [
+      "web/build/**/*",
+      "node_modules/@julusian/midi/prebuilds/**/*"
+    ],
+    "targets": [
+      "node24-win-x64"
+    ],
+    "outputPath": "dist"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "easymidi": "^3.1.0",
+    "express": "^4.19.2",
+    "osc": "^2.4.5",
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "@yao-pkg/pkg": "^6.20.0",
+    "concurrently": "^8.2.2",
+    "nodemon": "^3.1.4"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
