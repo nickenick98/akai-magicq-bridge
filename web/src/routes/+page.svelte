@@ -804,6 +804,14 @@
     bumpView();
   }
 
+  function cancelMappingEdit() {
+    selected = null;
+    editor = null;
+    previewState = 'live';
+    notice = 'Mapping Bearbeitung abgebrochen.';
+    bumpView();
+  }
+
   async function applyBulkEdit() {
     if (!quickMapEnabled && !bulkTargetEnabled && !bulkLedEnabled) {
       notice = 'Bitte Quick Mapping, Zieltyp oder Farbe/LED anhaken.';
@@ -1517,7 +1525,10 @@
           {#if hasLedControls(selected?.type) && editor.target.type !== 'disabled'}
             {@render LedControls(editor.led, setEditorLed, selected?.type)}
           {/if}
-          <div class="actions"><button on:click={saveMapping}>Mapping speichern</button></div>
+          <div class="actions">
+            <button class="secondary" on:click={cancelMappingEdit}>Abbruch</button>
+            <button on:click={saveMapping}>Mapping speichern</button>
+          </div>
         {:else}
           <p class="empty">Element auswaehlen oder Mehrfachauswahl aktivieren.</p>
         {/if}
