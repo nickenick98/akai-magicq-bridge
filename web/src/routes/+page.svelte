@@ -104,6 +104,8 @@
   let ws = null;
   let wsState = 'offline';
   let pollTimer = null;
+  let ledClockTimer = null;
+  let ledClock = Date.now();
 
   let activeLayer = 'normal';
   let previewState = 'live';
@@ -149,10 +151,14 @@
     await loadInitial();
     connectWs();
     pollTimer = setInterval(pollStatus, 500);
+    ledClockTimer = setInterval(() => {
+      ledClock = Date.now();
+    }, 80);
   });
 
   onDestroy(() => {
     if (pollTimer) clearInterval(pollTimer);
+    if (ledClockTimer) clearInterval(ledClockTimer);
     if (ws) ws.close();
   });
 
@@ -500,10 +506,22 @@
     };
   }
 
-  function styleFor(type, value) {
+  function styleFor(type, value, clock = ledClock) {
     const state = ledState(type, value);
     const color = hardwareColor(type, state.color);
-    return `--control-color:${color};--control-text:${textColor(state.color)};--effect-color:${color};`;
+    const phase = syncedLedPhase(state.mode, clock);
+    return `--control-color:${color};--control-text:${textColor(state.color)};--effect-color:${color};--sync-color:${phase.blinkOn ? color : '#151b17'};--sync-brightness:${phase.blinkBrightness};--pulse-brightness:${phase.pulseBrightness};`;
+  }
+
+  function syncedLedPhase(mode, clock) {
+    const blinkOn = mode !== 'blink' || Math.floor(clock / 360) % 2 === 0;
+    const pulseCycle = (clock % 1350) / 1350;
+    const pulseBrightness = mode === 'pulse' ? (0.58 + 0.77 * ((Math.sin((pulseCycle * Math.PI * 2) - Math.PI / 2) + 1) / 2)).toFixed(3) : '1';
+    return {
+      blinkOn,
+      blinkBrightness: blinkOn ? '1.25' : '0.75',
+      pulseBrightness
+    };
   }
 
   function modeClass(type, value) {
@@ -1172,31 +1190,31 @@
         <div class="controller">
           <div class="matrix">
             {#each matrixDisplay as note}
-              <button class:active={activeFor('pad', note, mappingFor('pad', note), viewRevision)} class:selected={selected?.type === 'pad' && selected.value === note} class:bulk={isSelectedBulk('pad', note)} class={modeClass('pad', note, viewRevision)} style={styleFor('pad', note, viewRevision)} on:click={() => selectElement('pad', note)} title={`Pad ${note}`}>
+              <button class:active={activeFor('pad', note, mappingFor('pad', note), viewRevision)} class:selected={selected?.type === 'pad' && selected.value === note} class:bulk={isSelectedBulk('pad', note)} class={modeClass('pad', note, viewRevision)} style={styleFor('pad', note, ledClock)} on:click={() => selectElement('pad', note)} title={`Pad ${note}`}>
                 <span class="main">{note}</span><span class="readout">{readout('pad', note, viewRevision)}</span>
               </button>
             {/each}
           </div>
           <div class="scenes">
             {#each scenes as note, index}
-              <button class:active={activeFor('scene', note, mappingFor('scene', note), viewRevision)} class:selected={selected?.type === 'scene' && selected.value === note} class:bulk={isSelectedBulk('scene', note)} class={modeClass('scene', note, viewRevision)} style={styleFor('scene', note, viewRevision)} on:click={() => selectElement('scene', note)}>
+              <button class:active={activeFor('scene', note, mappingFor('scene', note), viewRevision)} class:selected={selected?.type === 'scene' && selected.value === note} class:bulk={isSelectedBulk('scene', note)} class={modeClass('scene', note, viewRevision)} style={styleFor('scene', note, ledClock)} on:click={() => selectElement('scene', note)}>
                 <span class="main">S{index + 1}</span><span class="readout">{readout('scene', note, viewRevision)}</span>
               </button>
             {/each}
           </div>
           <div class="controls">
             {#each controls as note, index}
-              <button class:active={activeFor('control', note, mappingFor('control', note), viewRevision)} class:selected={selected?.type === 'control' && selected.value === note} class:bulk={isSelectedBulk('control', note)} class={modeClass('control', note, viewRevision)} style={styleFor('control', note, viewRevision)} on:click={() => selectElement('control', note)}>
+              <button class:active={activeFor('control', note, mappingFor('control', note), viewRevision)} class:selected={selected?.type === 'control' && selected.value === note} class:bulk={isSelectedBulk('control', note)} class={modeClass('control', note, viewRevision)} style={styleFor('control', note, ledClock)} on:click={() => selectElement('control', note)}>
                 <span class="main">C{index + 1}</span><span class="readout">{readout('control', note, viewRevision)}</span>
               </button>
             {/each}
-            <button class:active={status.midi?.shiftActive} class:selected={selected?.type === 'shift'} class:bulk={isSelectedBulk('shift', shiftNote)} class={modeClass('shift', shiftNote, viewRevision)} style={styleFor('shift', shiftNote, viewRevision)} on:click={() => selectElement('shift', shiftNote)}>
+            <button class:active={status.midi?.shiftActive} class:selected={selected?.type === 'shift'} class:bulk={isSelectedBulk('shift', shiftNote)} class={modeClass('shift', shiftNote, viewRevision)} style={styleFor('shift', shiftNote, ledClock)} on:click={() => selectElement('shift', shiftNote)}>
               <span class="main">Shift</span><span class="readout">{readout('shift', shiftNote, viewRevision)}</span>
             </button>
           </div>
           <div class="faders">
             {#each faders as cc, index}
-              <button class:active={activeFor('fader', cc, mappingFor('fader', cc), viewRevision)} class:selected={selected?.type === 'fader' && selected.value === cc} class:bulk={isSelectedBulk('fader', cc)} class={modeClass('fader', cc, viewRevision)} style={styleFor('fader', cc, viewRevision)} on:click={() => selectElement('fader', cc)}>
+              <button class:active={activeFor('fader', cc, mappingFor('fader', cc), viewRevision)} class:selected={selected?.type === 'fader' && selected.value === cc} class:bulk={isSelectedBulk('fader', cc)} class={modeClass('fader', cc, viewRevision)} style={styleFor('fader', cc, ledClock)} on:click={() => selectElement('fader', cc)}>
                 <span class="fader-value">{faderRaw(cc, viewRevision)}</span><small>{faderLevel(cc, viewRevision)}%</small><span class="main">F{index + 1}</span><span class="readout">{readout('fader', cc, viewRevision)}</span>
               </button>
             {/each}
@@ -1583,11 +1601,9 @@
   button.active { filter: brightness(1.25) saturate(1.2); box-shadow: 0 0 18px var(--effect-color), inset 0 -10px 18px rgba(0,0,0,.22); }
   button.selected { outline: 4px solid #fff; outline-offset: 2px; }
   button.bulk { outline: 3px solid #b8f36d; outline-offset: 2px; }
-  .mode-blink { animation: led-blink .72s steps(2, jump-none) infinite; }
-  .mode-pulse { animation: led-pulse 1.35s ease-in-out infinite; }
+  .mode-blink { background: var(--sync-color) !important; filter: brightness(var(--sync-brightness)); }
+  .mode-pulse { background: var(--effect-color) !important; filter: brightness(var(--pulse-brightness)) saturate(1.15); }
   .mode-off { background: #232c25 !important; color: #aebdae !important; }
-  @keyframes led-blink { 0%,49% { background: var(--effect-color); filter: brightness(1.25); } 50%,100% { background: #151b17; filter: brightness(.75); } }
-  @keyframes led-pulse { 0%,100% { background: var(--effect-color); filter: brightness(.58); } 50% { background: var(--effect-color); filter: brightness(1.35); } }
   .editor { display: grid; align-content: start; gap: 12px; }
   .bulk-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
   .bulk-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
