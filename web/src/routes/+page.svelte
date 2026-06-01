@@ -968,7 +968,8 @@
     const response = await api('/api/network/apply', { method: 'POST', body: config.network });
     const data = await response.json();
     status = { ...status, network: data.network };
-    notice = 'Netzwerk auf Raspberry angewendet.';
+    notice = data.ok ? 'Netzwerk auf Raspberry angewendet.' : 'Backup-IP wurde versucht, Haupt-IP/DHCP hat Fehler gemeldet.';
+    error = data.error || '';
     bumpView();
   }
 
@@ -1131,6 +1132,7 @@
       <div class="status-row network-status">
         <span class:ok={status.network?.supported} class="pill">Linux {status.network?.supported ? 'ok' : 'nur speichern'}</span>
         <span class:ok={!status.network?.requiresSudo} class="pill">Rechte {status.network?.requiresSudo ? 'sudo -n' : 'root'}</span>
+        <span class:ok={status.network?.backup?.present} class="pill">Backup-IP {status.network?.backup?.present ? 'aktiv' : 'fehlt'}</span>
         <span class="pill">Host {status.network?.hostname || '-'}</span>
       </div>
       <div class="fields network-fields">
@@ -1163,6 +1165,9 @@
       {/if}
       {#if status.network?.lastApply?.errors?.length}
         <pre class="command-preview error-preview">{status.network.lastApply.errors.join('\n')}</pre>
+      {/if}
+      {#if status.network?.lastBackupApply?.errors?.length}
+        <pre class="command-preview error-preview">{status.network.lastBackupApply.errors.join('\n')}</pre>
       {/if}
     </section>
     {/if}

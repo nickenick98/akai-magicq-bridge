@@ -46,7 +46,7 @@ async function applyNetworkConfig(config) {
 
   const network = JSON.parse(JSON.stringify(config.network || {}));
   network.main = network.main || {};
-  network.main.connection = network.main.connection || (await resolveConnectionName(network.interface || 'eth0'));
+  network.main.connection = network.main.connection || (await resolveOrCreateConnectionName(network.interface || 'eth0'));
   const commands = buildNetworkCommands(network);
   const errors = [];
 
@@ -59,18 +59,24 @@ async function applyNetworkConfig(config) {
   }
 
   if (errors.length) {
-    const status = getNetworkStatus(config);
+    const status = getNetworkStatus({ ...config, network });
     status.lastApply = {
       ok: false,
       errors,
+      connection: network.main.connection,
       backupApplied: commands.some((command) => command.label === 'Backup-IP setzen')
     };
     return status;
   }
 
   return {
-    ...getNetworkStatus(config),
-    lastApply: { ok: true, errors: [], backupApplied: commands.some((command) => command.label === 'Backup-IP setzen') }
+    ...getNetworkStatus({ ...config, network }),
+    lastApply: {
+      ok: true,
+      errors: [],
+      connection: network.main.connection,
+      backupApplied: commands.some((command) => command.label === 'Backup-IP setzen')
+    }
   };
 }
 
@@ -137,10 +143,16 @@ function buildNetworkCommands(network = {}) {
         'connection',
         'modify',
         mainConnection,
+        'connection.interface-name',
+        iface,
+        'connection.autoconnect',
+        'yes',
         'ipv4.method',
         'manual',
         'ipv4.addresses',
         addresses,
+        'ipv4.may-fail',
+        'no',
         'ipv4.gateway',
         String(main.gateway || ''),
         'ipv4.dns',
@@ -155,10 +167,16 @@ function buildNetworkCommands(network = {}) {
         'connection',
         'modify',
         mainConnection,
+        'connection.interface-name',
+        iface,
+        'connection.autoconnect',
+        'yes',
         'ipv4.method',
         'auto',
         'ipv4.addresses',
         addresses,
+        'ipv4.may-fail',
+        'yes',
         'ipv4.gateway',
         '',
         'ipv4.dns',
@@ -295,6 +313,32 @@ async function resolveConnectionName(interfaceName) {
   }
 
   return iface;
+}
+
+async function resolveOrCreateConnectionName(interfaceName) {
+  const iface = sanitizeInterface(interfaceName || 'eth0');
+  const resolved = await resolveConnectionName(iface);
+  if (resolved && resolved !== iface) return resolved;
+
+  const managedName = `akai-bridge-${iface}`;
+  if (await connectionExists(managedName)) return managedName;
+  if (await connectionExists(iface)) return iface;
+
+  try {
+    await run('nmcli', ['connection', 'add', 'type', 'ethernet', 'ifname', iface, 'con-name', managedName]);
+    return managedName;
+  } catch {
+    return iface;
+  }
+}
+
+async function connectionExists(name) {
+  try {
+    await run('nmcli', ['connection', 'show', name]);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 module.exports = {

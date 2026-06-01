@@ -427,6 +427,9 @@ app.post('/api/network/apply', async (req, res) => {
   try {
     config = updateConfig({ network: req.body || config.network || {} });
     const networkStatus = await applyNetworkConfig(config);
+    if (networkStatus.config?.main?.connection) {
+      config = updateConfig({ network: networkStatus.config });
+    }
     startNetworkBackupTimer();
     broadcast('status', status());
     res.json({
