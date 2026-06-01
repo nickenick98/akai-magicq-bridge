@@ -122,7 +122,7 @@ function restoreBackupPayload(payload) {
 
 function reconnect() {
   led.setApcLayout(config.apc);
-  midi.connect(config);
+  midi.connect(config, { keepExisting: true });
   try {
     osc.start(config);
   } catch (error) {

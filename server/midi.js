@@ -58,8 +58,7 @@ class MidiBridge extends EventEmitter {
     }
   }
 
-  connect(config = this.config) {
-    this.close();
+  connect(config = this.config, options = {}) {
     this.config = config;
 
     if (!easymidi) {
@@ -72,6 +71,22 @@ class MidiBridge extends EventEmitter {
     const devices = this.listDevices({ force: true });
     const inputName = config.midi.input || devices.inputs.find((name) => /APC Mini/i.test(name));
     const outputName = config.midi.output || devices.outputs.find((name) => /APC Mini/i.test(name));
+    const keepExisting = Boolean(options.keepExisting);
+
+    if (keepExisting) {
+      const wantsInput = Boolean(config.midi.input) || Boolean(inputName);
+      const wantsOutput = Boolean(config.midi.output) || Boolean(outputName);
+      const missingInput = wantsInput && !inputName;
+      const missingOutput = wantsOutput && !outputName;
+
+      if ((this.input || this.output) && (missingInput || missingOutput)) {
+        const error = new Error(`MIDI device not available yet: input=${inputName || config.midi.input || 'auto'} output=${outputName || config.midi.output || 'auto'}`);
+        this.emit('status', this.getStatus(error));
+        return this.getStatus(error);
+      }
+    }
+
+    this.close();
 
     try {
       if (inputName) {

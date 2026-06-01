@@ -29,6 +29,17 @@ class OscBridge extends EventEmitter {
     });
 
     this.udpPort.on('message', (message, timeTag, info) => {
+      const remoteAddress = info?.address || '';
+      if (!isAllowedRemote(remoteAddress, this.config.magicq.ip)) {
+        this.emit('ignored', {
+          address: message.address,
+          remote: info ? `${info.address}:${info.port}` : undefined,
+          expected: this.config.magicq.ip,
+          at: new Date().toISOString()
+        });
+        return;
+      }
+
       this.lastReceivedAt = new Date().toISOString();
       const data = {
         address: message.address,
@@ -226,6 +237,16 @@ function clampPercent(value) {
   const number = Number(value);
   if (!Number.isFinite(number)) return 0;
   return Math.max(0, Math.min(100, number));
+}
+
+function isAllowedRemote(remoteAddress, expectedAddress) {
+  const remote = normalizeIp(remoteAddress);
+  const expected = normalizeIp(expectedAddress);
+  return Boolean(remote && expected && remote === expected);
+}
+
+function normalizeIp(address = '') {
+  return String(address).trim().replace(/^::ffff:/, '');
 }
 
 module.exports = {
