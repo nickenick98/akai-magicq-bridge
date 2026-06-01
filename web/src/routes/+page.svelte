@@ -139,7 +139,7 @@
   $: controls = apc.controlNotes || Array.from({ length: 8 }, (_, index) => 100 + index);
   $: faders = apc.faderCcs || Array.from({ length: 9 }, (_, index) => 48 + index);
   $: shiftNote = apc.shiftNote ?? 122;
-  $: quickMapItems = quickMapSelection();
+  $: quickMapItems = quickMapSelection(selection, quickMap);
   $: quickMapCanSave = quickMapItems.length > 0;
 
   onMount(async () => {
@@ -751,8 +751,8 @@
     bumpView();
   }
 
-  function quickMapSelection() {
-    return selection.filter((item) => item.type !== 'shift' && Boolean(quickMapTargetFor(item, 0)));
+  function quickMapSelection(items = selection, settings = quickMap) {
+    return items.filter((item) => item.type !== 'shift' && Boolean(quickMapTargetFor(item, 0, settings)));
   }
 
   function sourceLabel(item) {
@@ -763,19 +763,19 @@
     return item.type;
   }
 
-  function quickMapTargetFor(item, index) {
-    const targetType = quickMap.targetType || 'auto-executor';
-    const page = Math.max(1, Number(quickMap.page) || 1);
-    const executor = Math.max(1, Number(quickMap.start) || 1) + index;
+  function quickMapTargetFor(item, index, settings = quickMap) {
+    const targetType = settings.targetType || 'auto-executor';
+    const page = Math.max(1, Number(settings.page) || 1);
+    const executor = Math.max(1, Number(settings.start) || 1) + index;
     if (targetType === 'disabled') return { type: 'disabled', action: 'off' };
     if (targetType === 'auto-executor') {
       return item.type === 'fader'
         ? { type: 'magicq-executor-fader', page, executor }
-        : { type: 'magicq-executor-button', page, executor, action: quickMap.action || 'toggle' };
+        : { type: 'magicq-executor-button', page, executor, action: settings.action || 'toggle' };
     }
     if (!targetTypeAllowed(item.type, targetType)) return null;
     if (targetType === 'magicq-executor-fader') return { type: targetType, page, executor };
-    if (targetType === 'magicq-executor-button') return { type: targetType, page, executor, action: quickMap.action || 'toggle' };
+    if (targetType === 'magicq-executor-button') return { type: targetType, page, executor, action: settings.action || 'toggle' };
     return null;
   }
 
@@ -813,7 +813,7 @@
 
     items.forEach((item, index) => {
       const mapping = withDefaults(mappingFor(item.type, item.value, item.layer) || createMapping(item.type, item.value, item.layer), item.type, item.value);
-      mapping.target = prepareTargetForType({ ...(mapping.target || {}), ...quickMapTargetFor(item, index) });
+      mapping.target = prepareTargetForType({ ...(mapping.target || {}), ...quickMapTargetFor(item, index, quickMap) });
       upsertMappingList(mappings, mapping);
       changed.push(mapping);
     });
