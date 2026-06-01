@@ -90,14 +90,25 @@ async function applyNetworkConfig(config) {
 async function applyBackupIp(config) {
   if (process.platform !== 'linux') return getNetworkStatus(config);
   const backup = config.network?.backup || {};
-  if (backup.enabled === false || backup.applyOnStart === false || !backup.address) {
+  const main = config.network?.main || {};
+  const mainStaticEnabled = main.mode === 'static' && main.address;
+  const backupRuntimeEnabled = backup.enabled !== false && backup.applyOnStart !== false && backup.address;
+  if (!mainStaticEnabled && !backupRuntimeEnabled) {
     return getNetworkStatus(config);
   }
 
   const iface = sanitizeInterface(config.network?.interface || backup.interface || config.network?.main?.interface || 'eth0');
   const errors = [];
+  let commands = [];
+  let initialStatus = getNetworkStatus(config);
 
-  for (const command of backupIpCommands(iface, backup.address)) {
+  if (mainStaticEnabled && staticRuntimeNeedsApply(initialStatus, iface, main.address, backupRuntimeEnabled ? backup.address : '')) {
+    commands = staticRuntimeCommands(iface, main.address, main.gateway, backupRuntimeEnabled ? backup.address : '');
+  } else if (backupRuntimeEnabled) {
+    commands = backupIpCommands(iface, backup.address);
+  }
+
+  for (const command of commands) {
     try {
       await run(command.bin, command.args);
     } catch (error) {
@@ -106,12 +117,23 @@ async function applyBackupIp(config) {
   }
 
   let status = getNetworkStatus(config);
-  if (!status.backup.present && errors.length === 0) {
+  if (
+    errors.length === 0 &&
+    ((backupRuntimeEnabled && !status.backup.present) ||
+      (mainStaticEnabled && staticRuntimeNeedsApply(status, iface, main.address, backupRuntimeEnabled ? backup.address : '')))
+  ) {
     await wait(300);
     status = getNetworkStatus(config);
   }
-  if (!status.backup.present && errors.length === 0) {
+  if (backupRuntimeEnabled && !status.backup.present && errors.length === 0) {
     errors.push(`Backup-IP ${backup.address} ist nach dem Setzen nicht auf ${iface} sichtbar.`);
+  }
+  if (
+    mainStaticEnabled &&
+    staticRuntimeNeedsApply(status, iface, main.address, backupRuntimeEnabled ? backup.address : '') &&
+    errors.length === 0
+  ) {
+    errors.push(`Statische Haupt-IP ${main.address} ist nach dem Setzen nicht sauber auf ${iface} aktiv.`);
   }
 
   status.lastBackupApply = {
@@ -119,6 +141,9 @@ async function applyBackupIp(config) {
     errors,
     interface: iface,
     address: String(backup.address),
+    mainAddress: String(main.address || ''),
+    staticMode: Boolean(mainStaticEnabled),
+    enforcedStatic: commands.some((command) => command.label === 'DHCP/IPv4-Adressen fuer statisch entfernen'),
     present: status.backup.present,
     at: new Date().toISOString()
   };
@@ -231,6 +256,30 @@ function flushIpv4Command(iface) {
     bin: 'ip',
     args: ['addr', 'flush', 'dev', iface, 'scope', 'global']
   };
+}
+
+function staticRuntimeCommands(iface, mainAddress, gateway, backupAddress = '') {
+  return [
+    {
+      label: 'Interface aktivieren',
+      bin: 'ip',
+      args: ['link', 'set', 'dev', iface, 'up']
+    },
+    flushIpv4Command(iface),
+    ...staticIpCommands(iface, mainAddress, gateway),
+    ...(backupAddress ? backupIpCommands(iface, backupAddress, { includeLinkUp: false }) : [])
+  ];
+}
+
+function staticRuntimeNeedsApply(status, iface, mainAddress, backupAddress = '') {
+  const allowed = new Set([normalizeAddress(mainAddress), normalizeAddress(backupAddress)].filter(Boolean));
+  const networkInterface = (status.interfaces || []).find((item) => item.name === iface);
+  const ipv4Addresses = (networkInterface?.addresses || []).filter((address) => address.family === 'IPv4');
+  const visible = new Set(ipv4Addresses.map((address) => normalizeAddress(address.cidr || address.address)).filter(Boolean));
+  const hasMain = visible.has(normalizeAddress(mainAddress));
+  const hasBackup = !backupAddress || visible.has(normalizeAddress(backupAddress));
+  const hasUnexpected = [...visible].some((address) => !allowed.has(address));
+  return !hasMain || !hasBackup || hasUnexpected;
 }
 
 function backupIpCommands(iface, address, options = {}) {

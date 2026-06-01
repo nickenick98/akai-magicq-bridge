@@ -180,6 +180,7 @@ Im Panel `Raspberry Netzwerk` kann eine feste Backup-IP und eine Haupt-IP konfig
 - Bei statischer Haupt-IP schaltet die Bridge DHCP ab, entfernt vorhandene globale IPv4-Adressen vom Interface und setzt danach nur Haupt-IP plus Backup-IP neu. Die Haupt-IP wird zusaetzlich sofort per `ip addr replace` und optional das Gateway per `ip route replace` gesetzt, damit die Adresse auch dann direkt aktiv wird, wenn NetworkManager den Reconnect nicht sauber schafft.
 - Wenn kein passendes NetworkManager-Profil vorhanden ist, legt die Bridge beim Anwenden ein Profil `akai-bridge-<interface>` an, z. B. `akai-bridge-eth0`.
 - Wenn `Beim Start setzen` aktiv ist, setzt der Server die Backup-IP beim Start und danach regelmaessig erneut. Dabei wird die Schnittstelle auch ohne Link/Carrier mit `ip link set dev <iface> up` aktiviert, damit ein direkt per Kabel angeschlossener PC die Backup-IP erreichen kann, sobald der Link steht.
+- Im statischen Modus prueft der Refresh dabei auch, ob noch fremde/dynamische IPv4-Adressen sichtbar sind, und setzt dann nur Haupt-IP plus Backup-IP erneut.
 
 Raspberry Pi OS Bookworm nutzt standardmaessig NetworkManager. Wenn der systemd-Service als Benutzer `pi` laeuft, braucht die Netzwerk-Anwendung sudo-Rechte ohne Passwort fuer `ip` und `nmcli`, oder der Service muss mit passenden Rechten laufen. Ohne diese Rechte bleibt die Konfiguration gespeichert, kann aber nicht angewendet werden.
 
