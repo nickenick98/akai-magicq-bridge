@@ -490,7 +490,7 @@ startLedRefreshTimer();
 startMidiWatchTimer();
 startNetworkBackupTimer();
 
-const port = Number(config.server.port || process.env.PORT || 3001);
+const port = Number(process.env.PORT || config.server.port || 3001);
 const host = config.server.host || '0.0.0.0';
 server.listen(port, host, () => {
   console.log(`AKAI MagicQ bridge listening on http://${host}:${port}`);

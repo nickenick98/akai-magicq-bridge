@@ -9,7 +9,10 @@ ExecStart=/usr/bin/node server/index.js
 Restart=always
 User=akai
 Environment=NODE_ENV=production
+Environment=PORT=80
 Environment=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+CapabilityBoundingSet=CAP_NET_BIND_SERVICE
 TimeoutStopSec=5
 
 [Install]

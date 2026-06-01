@@ -91,13 +91,13 @@ journalctl -u akai-magicq-bridge -f
 ## 6. Weboberflaeche oeffnen
 
 ```text
-http://<raspi-ip>:3001
+http://<raspi-ip>/
 ```
 
 Wenn die Backup-IP aktiv ist:
 
 ```text
-http://192.168.50.10:3001
+http://192.168.50.10/
 ```
 
 Die Bridge setzt die Backup-IP beim Start und danach regelmaessig erneut. Das Interface wird dafuer auch ohne Link aktiv geschaltet, damit der Pi spaeter direkt am PC ueber diese Adresse erreichbar ist.
@@ -179,5 +179,5 @@ sudo -n /usr/sbin/ip addr show
 Port:
 
 ```bash
-sudo ss -tulpn | grep 3001
+sudo ss -tulpn | grep ':80'
 ```

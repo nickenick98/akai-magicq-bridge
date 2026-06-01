@@ -136,7 +136,7 @@ npm run build
 npm start
 ```
 
-Die Oberflaeche ist dann ueber `http://<raspi-ip>:3001` erreichbar.
+Mit `npm start` laeuft die Oberflaeche weiter auf `http://<raspi-ip>:3001`.
 
 6. Netzwerkrechte fuer Backup-IP und Haupt-IP erlauben:
 
@@ -154,6 +154,8 @@ sudo systemctl daemon-reload
 sudo systemctl enable akai-magicq-bridge
 sudo systemctl start akai-magicq-bridge
 ```
+
+Die Oberflaeche ist dann ueber `http://<raspi-ip>/` erreichbar. Der Raspberry-Pi-systemd-Service setzt dafuer `PORT=80` und erlaubt dem Benutzer `akai` das Binden von Port 80 per `CAP_NET_BIND_SERVICE`. Die Windows-EXE und die lokale Entwicklung bleiben ohne diese Service-Umgebung bei Port `3001`.
 
 8. Status und Logs ansehen:
 
