@@ -112,6 +112,7 @@
   let bulkLed = { offColor: 5, offMode: 'solid', onColor: 21, activeMode: 'solid' };
   let bulkTargetEnabled = false;
   let bulkTarget = { type: 'disabled', action: 'off' };
+  let quickMap = { page: 1, start: 1, action: 'toggle' };
 
   let live = {
     notes: {},
@@ -596,6 +597,10 @@
     bulkTarget = prepareTargetForType({ ...bulkTarget, type: value });
   }
 
+  function setQuickMap(key, value) {
+    quickMap = { ...quickMap, [key]: key === 'action' ? value : Math.max(1, Number(value) || 1) };
+  }
+
   function setTarget(key, value) {
     editor = { ...editor, target: { ...(editor.target || {}), [key]: normalizeTargetValue(key, value) } };
     bumpView();
@@ -733,6 +738,72 @@
     config = { ...config, mappings: data.mappings };
     notice = `${changed.length} Mappings gespeichert.`;
     await api('/api/led/refresh', { method: 'POST' });
+    selection = [];
+    multiSelect = false;
+    bumpView();
+  }
+
+  function quickMapSelection() {
+    return selection.filter((item) => item.type !== 'shift');
+  }
+
+  function sourceLabel(item) {
+    if (item.type === 'pad') return `Pad ${item.value}`;
+    if (item.type === 'scene') return `S${scenes.indexOf(item.value) + 1}`;
+    if (item.type === 'control') return `C${controls.indexOf(item.value) + 1}`;
+    if (item.type === 'fader') return `F${faders.indexOf(item.value) + 1}`;
+    return item.type;
+  }
+
+  function upsertMappingList(mappings, mapping) {
+    const sourceKey = mapping.source?.type === 'fader' ? 'cc' : 'note';
+    const sourceShift = mapping.source?.type === 'fader' ? false : Boolean(mapping.source?.shift);
+    const index = mappings.findIndex(
+      (item) =>
+        item.source?.type === mapping.source?.type &&
+        item.source?.[sourceKey] === mapping.source?.[sourceKey] &&
+        (mapping.source?.type === 'fader' || Boolean(item.source?.shift) === sourceShift)
+    );
+    if (index >= 0) mappings[index] = mapping;
+    else mappings.push(mapping);
+  }
+
+  async function applyQuickMap() {
+    const items = quickMapSelection();
+    if (!items.length) {
+      notice = 'Keine Pads, Buttons oder Fader in der Auswahl.';
+      return;
+    }
+
+    const changed = [];
+    const mappings = [...(config.mappings || [])];
+    const page = Math.max(1, Number(quickMap.page) || 1);
+    const start = Math.max(1, Number(quickMap.start) || 1);
+
+    items.forEach((item, index) => {
+      const mapping = withDefaults(mappingFor(item.type, item.value, item.layer) || createMapping(item.type, item.value, item.layer), item.type, item.value);
+      const executor = start + index;
+      if (item.type === 'fader') {
+        mapping.target = prepareTargetForType({ ...(mapping.target || {}), type: 'magicq-executor-fader', page, executor });
+      } else {
+        mapping.target = prepareTargetForType({
+          ...(mapping.target || {}),
+          type: 'magicq-executor-button',
+          page,
+          executor,
+          action: quickMap.action || 'toggle'
+        });
+      }
+      upsertMappingList(mappings, mapping);
+      changed.push(mapping);
+    });
+
+    config = { ...config, mappings };
+    bumpView();
+    const response = await api('/api/mappings/bulk', { method: 'POST', body: { mappings: changed } });
+    const data = await response.json();
+    config = { ...config, mappings: data.mappings };
+    notice = `Quick Mapping gespeichert: ${changed.length} Elemente ab Executor ${start}.`;
     selection = [];
     multiSelect = false;
     bumpView();
@@ -1060,6 +1131,34 @@
 
         {#if multiSelect}
           <div class="bulk-head"><strong>{selection.length} ausgewaehlt</strong><button class="secondary" on:click={() => (selection = [])}>Leeren</button></div>
+          <div class="quick-map">
+            <div class="quick-map-head">
+              <div>
+                <strong>Quick Mapping</strong>
+                <span>Auswahlreihenfolge wird auf fortlaufende Executor gelegt.</span>
+              </div>
+              <button disabled={!quickMapSelection().length} on:click={applyQuickMap}>Quick Mapping speichern</button>
+            </div>
+            <div class="fields compact">
+              <label><span>Page</span><input type="number" min="1" value={quickMap.page} on:input={(event) => setQuickMap('page', event.currentTarget.value)} /></label>
+              <label><span>Start Nummer</span><input type="number" min="1" value={quickMap.start} on:input={(event) => setQuickMap('start', event.currentTarget.value)} /></label>
+              <label>
+                <span>Modus</span>
+                <select value={quickMap.action} on:change={(event) => setQuickMap('action', event.currentTarget.value)}>
+                  {#each executorActions as action}<option value={action}>{action}</option>{/each}
+                </select>
+              </label>
+            </div>
+            {#if quickMapSelection().length}
+              <div class="quick-map-preview">
+                {#each quickMapSelection() as item, index}
+                  <span>{index + 1}. {sourceLabel(item)} -> Exec {Number(quickMap.start || 1) + index}</span>
+                {/each}
+              </div>
+            {:else}
+              <p class="hint">Pads oder Buttons in der gewuenschten Reihenfolge anklicken.</p>
+            {/if}
+          </div>
           <div class="fields compact">
             <label class="checkbox-row">
               <input type="checkbox" bind:checked={bulkTargetEnabled} />
@@ -1366,6 +1465,12 @@
   @keyframes led-pulse { 0%,100% { background: var(--effect-color); filter: brightness(.58); } 50% { background: var(--effect-color); filter: brightness(1.35); } }
   .editor { display: grid; align-content: start; gap: 12px; }
   .bulk-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+  .quick-map { display: grid; gap: 12px; padding: 12px; border: 1px solid #2d372f; border-radius: 8px; background: #111612; }
+  .quick-map-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+  .quick-map-head strong, .quick-map-head span { display: block; }
+  .quick-map-head span { margin-top: 3px; color: #9cac9d; font-size: 12px; }
+  .quick-map-preview { display: flex; flex-wrap: wrap; gap: 6px; }
+  .quick-map-preview span { padding: 5px 7px; border: 1px solid #354037; border-radius: 6px; background: #0d110f; color: #d8ecd1; font-size: 12px; font-weight: 800; }
   .checkbox-row { display: flex; align-items: center; gap: 9px; grid-column: 1 / -1; min-height: 38px; }
   .hint { grid-column: 1 / -1; color: #9cac9d; font-size: 12px; }
   .error { color: #ffb8a8; }
