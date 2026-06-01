@@ -12,7 +12,6 @@ Environment=NODE_ENV=production
 Environment=PORT=80
 Environment=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 AmbientCapabilities=CAP_NET_BIND_SERVICE CAP_NET_ADMIN
-CapabilityBoundingSet=CAP_NET_BIND_SERVICE CAP_NET_ADMIN
 TimeoutStopSec=5
 
 [Install]

@@ -155,7 +155,7 @@ sudo systemctl enable akai-magicq-bridge
 sudo systemctl start akai-magicq-bridge
 ```
 
-Die Oberflaeche ist dann ueber `http://<raspi-ip>/` erreichbar. Der Raspberry-Pi-systemd-Service setzt dafuer `PORT=80` und erlaubt dem Benutzer `akai` das Binden von Port 80 per `CAP_NET_BIND_SERVICE`. Fuer die Backup-IP bekommt der Service zusaetzlich `CAP_NET_ADMIN`, damit `ip addr replace` auch ohne DHCP-Link direkt greifen kann. Die Windows-EXE und die lokale Entwicklung bleiben ohne diese Service-Umgebung bei Port `3001`.
+Die Oberflaeche ist dann ueber `http://<raspi-ip>/` erreichbar. Der Raspberry-Pi-systemd-Service setzt dafuer `PORT=80` und erlaubt dem Benutzer `akai` das Binden von Port 80 per `CAP_NET_BIND_SERVICE`. Fuer direkte IP-Befehle bekommt der Service zusaetzlich `CAP_NET_ADMIN`. Die NetworkManager-Befehle laufen weiter ueber die sudoers-Regel; deshalb begrenzt die Service-Datei die Capabilities nicht per `CapabilityBoundingSet`, damit `sudo` seinen UID/GID-Wechsel ausfuehren kann. Die Windows-EXE und die lokale Entwicklung bleiben ohne diese Service-Umgebung bei Port `3001`.
 
 8. Status und Logs ansehen:
 
@@ -183,7 +183,7 @@ Im Panel `Raspberry Netzwerk` kann eine feste Backup-IP und eine Haupt-IP konfig
 - Wenn `Beim Start setzen` aktiv ist, setzt der Server die Backup-IP beim Start und danach regelmaessig erneut. Dabei wird die Schnittstelle auch ohne Link/Carrier mit `ip link set dev <iface> up` aktiviert, damit ein direkt per Kabel angeschlossener PC die Backup-IP erreichen kann, sobald der Link steht.
 - Im statischen Modus prueft der Refresh dabei auch, ob noch fremde/dynamische IPv4-Adressen sichtbar sind, und setzt dann nur Haupt-IP plus Backup-IP erneut.
 
-Raspberry Pi OS Bookworm nutzt standardmaessig NetworkManager. Wenn der systemd-Service als Benutzer `pi` laeuft, braucht die Netzwerk-Anwendung sudo-Rechte ohne Passwort fuer `ip` und `nmcli`, oder der Service muss mit passenden Rechten laufen. Ohne diese Rechte bleibt die Konfiguration gespeichert, kann aber nicht angewendet werden.
+Raspberry Pi OS Bookworm nutzt standardmaessig NetworkManager. Wenn der systemd-Service als Benutzer `akai` laeuft, braucht die Netzwerk-Anwendung sudo-Rechte ohne Passwort fuer `ip` und `nmcli`, oder der Service muss mit passenden Rechten laufen. Ohne diese Rechte bleibt die Konfiguration gespeichert, kann aber nicht angewendet werden.
 
 Beispiel fuer die feste Backup-IP:
 
