@@ -35,9 +35,12 @@ class LedController {
 
   applyMappingLed(mapping, active) {
     if (!mapping?.source) return;
+    if (mapping.source.type === 'fader') return;
 
     const led = mapping.led || {};
     const note = mapping.source.note;
+    if (!isValidMidiValue(note)) return;
+
     const color = active ? led.onColor || 21 : led.offColor || 0;
     const mode = active ? led.activeMode || 'solid' : led.offMode || (color > 0 ? 'solid' : 'off');
 
@@ -77,6 +80,8 @@ class LedController {
   setLed(note, color, mode = 'solid') {
     this.stopTimer(note);
     const normalizedNote = Number(note);
+    if (!isValidMidiValue(normalizedNote)) return;
+
     const normalizedColor = clampMidiValue(color);
 
     if (this.isPad(normalizedNote)) {
@@ -90,6 +95,11 @@ class LedController {
   isPad(note) {
     return !this.apc || (this.apc.matrixNotes || []).includes(Number(note));
   }
+}
+
+function isValidMidiValue(value) {
+  const number = Number(value);
+  return Number.isFinite(number) && number >= 0 && number <= 127;
 }
 
 function rgbChannelForMode(mode) {
