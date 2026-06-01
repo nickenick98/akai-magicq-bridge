@@ -155,7 +155,7 @@ sudo systemctl enable akai-magicq-bridge
 sudo systemctl start akai-magicq-bridge
 ```
 
-Die Oberflaeche ist dann ueber `http://<raspi-ip>/` erreichbar. Der Raspberry-Pi-systemd-Service setzt dafuer `PORT=80` und erlaubt dem Benutzer `akai` das Binden von Port 80 per `CAP_NET_BIND_SERVICE`. Die Windows-EXE und die lokale Entwicklung bleiben ohne diese Service-Umgebung bei Port `3001`.
+Die Oberflaeche ist dann ueber `http://<raspi-ip>/` erreichbar. Der Raspberry-Pi-systemd-Service setzt dafuer `PORT=80` und erlaubt dem Benutzer `akai` das Binden von Port 80 per `CAP_NET_BIND_SERVICE`. Fuer die Backup-IP bekommt der Service zusaetzlich `CAP_NET_ADMIN`, damit `ip addr replace` auch ohne DHCP-Link direkt greifen kann. Die Windows-EXE und die lokale Entwicklung bleiben ohne diese Service-Umgebung bei Port `3001`.
 
 8. Status und Logs ansehen:
 
@@ -176,7 +176,7 @@ Im Panel `Raspberry Netzwerk` kann eine feste Backup-IP und eine Haupt-IP konfig
 - Backup-IP: bleibt als Rettungsadresse auf dieser Schnittstelle, z. B. `192.168.50.10/24`.
 - Haupt-IP: kann per DHCP laufen oder statisch gesetzt werden.
 - Unter Windows werden diese Werte nur gespeichert.
-- Unter Raspberry Pi OS/Linux wird die Haupt-IP ueber NetworkManager/`nmcli` gesetzt und die Backup-IP mit `ip addr replace` ergaenzt.
+- Unter Raspberry Pi OS/Linux wird die Haupt-IP ueber NetworkManager/`nmcli` gesetzt und die Backup-IP als zusaetzliche Adresse im NetworkManager-Profil hinterlegt und mit `ip addr replace` ergaenzt.
 - Wenn `Beim Start setzen` aktiv ist, setzt der Server die Backup-IP beim Start und danach regelmaessig erneut. Dabei wird die Schnittstelle auch ohne Link/Carrier mit `ip link set dev <iface> up` aktiviert, damit ein direkt per Kabel angeschlossener PC die Backup-IP erreichen kann, sobald der Link steht.
 
 Raspberry Pi OS Bookworm nutzt standardmaessig NetworkManager. Wenn der systemd-Service als Benutzer `pi` laeuft, braucht die Netzwerk-Anwendung sudo-Rechte ohne Passwort fuer `ip` und `nmcli`, oder der Service muss mit passenden Rechten laufen. Ohne diese Rechte bleibt die Konfiguration gespeichert, kann aber nicht angewendet werden.

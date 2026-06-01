@@ -100,7 +100,7 @@ Wenn die Backup-IP aktiv ist:
 http://192.168.50.10/
 ```
 
-Die Bridge setzt die Backup-IP beim Start und danach regelmaessig erneut. Das Interface wird dafuer auch ohne Link aktiv geschaltet, damit der Pi spaeter direkt am PC ueber diese Adresse erreichbar ist.
+Die Bridge setzt die Backup-IP beim Start und danach regelmaessig erneut. Das Interface wird dafuer auch ohne Link aktiv geschaltet, damit der Pi spaeter direkt am PC ueber diese Adresse erreichbar ist. Im systemd-Service ist dafuer `CAP_NET_ADMIN` gesetzt; die Haupt-IP-Konfiguration ueber NetworkManager braucht weiterhin die sudoers-Regel fuer `nmcli`.
 
 ## 7. MIDI pruefen
 

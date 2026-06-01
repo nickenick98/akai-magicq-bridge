@@ -429,7 +429,11 @@ app.post('/api/network/apply', async (req, res) => {
     const networkStatus = await applyNetworkConfig(config);
     startNetworkBackupTimer();
     broadcast('status', status());
-    res.json({ ok: true, network: networkStatus });
+    res.json({
+      ok: networkStatus.lastApply?.ok !== false,
+      error: networkStatus.lastApply?.errors?.join('\n') || '',
+      network: networkStatus
+    });
   } catch (error) {
     reportError(error, 'network');
     res.status(500).json({ ok: false, error: error.message, network: getNetworkStatus(config) });

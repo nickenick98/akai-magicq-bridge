@@ -3,12 +3,20 @@ const { execFile } = require('child_process');
 
 function getNetworkStatus(config) {
   const network = config.network || {};
-  let commands = [];
+  let iface = 'eth0';
   let error = '';
+  try {
+    iface = sanitizeInterface(network.interface || network.backup?.interface || network.main?.interface || 'eth0');
+  } catch (err) {
+    error = err.message;
+  }
+  const backupAddress = String(network.backup?.address || '').trim();
+  const interfaces = listInterfaces();
+  let commands = [];
   try {
     commands = buildNetworkCommands(network);
   } catch (err) {
-    error = err.message;
+    error = [error, err.message].filter(Boolean).join('; ');
   }
 
   return {
@@ -18,7 +26,14 @@ function getNetworkStatus(config) {
     requiresRoot: process.platform === 'linux' && process.getuid && process.getuid() !== 0,
     requiresSudo: process.platform === 'linux' && process.getuid && process.getuid() !== 0,
     config: network,
-    interfaces: listInterfaces(),
+    interfaces,
+    backup: {
+      interface: iface,
+      address: backupAddress,
+      enabled: network.backup?.enabled !== false,
+      applyOnStart: network.backup?.applyOnStart !== false,
+      present: backupAddress ? interfaceHasAddress(interfaces, iface, backupAddress) : false
+    },
     commands,
     error
   };
@@ -77,15 +92,28 @@ async function applyBackupIp(config) {
     }
   }
 
-  const status = getNetworkStatus(config);
+  let status = getNetworkStatus(config);
+  if (!status.backup.present && errors.length === 0) {
+    await wait(300);
+    status = getNetworkStatus(config);
+  }
+  if (!status.backup.present && errors.length === 0) {
+    errors.push(`Backup-IP ${backup.address} ist nach dem Setzen nicht auf ${iface} sichtbar.`);
+  }
+
   status.lastBackupApply = {
     ok: errors.length === 0,
     errors,
     interface: iface,
     address: String(backup.address),
+    present: status.backup.present,
     at: new Date().toISOString()
   };
   return status;
+}
+
+function wait(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function buildNetworkCommands(network = {}) {
@@ -93,7 +121,13 @@ function buildNetworkCommands(network = {}) {
   const main = network.main || {};
   const iface = sanitizeInterface(network.interface || backup.interface || main.interface || 'eth0');
   const mainConnection = String(main.connection || iface).trim();
+  const backupEnabled = backup.enabled !== false && backup.address;
+  const addresses = formatMainAddresses(main, backupEnabled ? backup.address : '');
   const commands = [];
+
+  if (backupEnabled) {
+    commands.push(...backupIpCommands(iface, backup.address));
+  }
 
   if (main.mode === 'static') {
     commands.push({
@@ -106,7 +140,7 @@ function buildNetworkCommands(network = {}) {
         'ipv4.method',
         'manual',
         'ipv4.addresses',
-        String(main.address || ''),
+        addresses,
         'ipv4.gateway',
         String(main.gateway || ''),
         'ipv4.dns',
@@ -117,7 +151,19 @@ function buildNetworkCommands(network = {}) {
     commands.push({
       label: 'Haupt-IP per DHCP setzen',
       bin: 'nmcli',
-      args: ['connection', 'modify', mainConnection, 'ipv4.method', 'auto', 'ipv4.gateway', '', 'ipv4.dns', '']
+      args: [
+        'connection',
+        'modify',
+        mainConnection,
+        'ipv4.method',
+        'auto',
+        'ipv4.addresses',
+        addresses,
+        'ipv4.gateway',
+        '',
+        'ipv4.dns',
+        ''
+      ]
     });
   }
 
@@ -127,7 +173,7 @@ function buildNetworkCommands(network = {}) {
     args: ['connection', 'up', mainConnection]
   });
 
-  if (backup.enabled !== false && backup.address) {
+  if (backupEnabled) {
     commands.push(...backupIpCommands(iface, backup.address));
   }
 
@@ -163,6 +209,27 @@ function listInterfaces() {
   }));
 }
 
+function formatMainAddresses(main = {}, backupAddress = '') {
+  const addresses = [];
+  if (main.mode === 'static' && main.address) addresses.push(String(main.address).trim());
+  if (backupAddress) addresses.push(String(backupAddress).trim());
+  return addresses.filter(Boolean).join(',');
+}
+
+function interfaceHasAddress(interfaces, iface, cidrOrAddress) {
+  const expected = normalizeAddress(cidrOrAddress);
+  const networkInterface = interfaces.find((item) => item.name === iface);
+  if (!networkInterface || !expected) return false;
+  return networkInterface.addresses.some((address) => {
+    if (address.family !== 'IPv4') return false;
+    return address.address === expected || normalizeAddress(address.cidr) === expected;
+  });
+}
+
+function normalizeAddress(cidrOrAddress) {
+  return String(cidrOrAddress || '').split('/')[0].trim();
+}
+
 function sanitizeInterface(name) {
   const value = String(name || 'eth0').trim();
   if (!/^[a-zA-Z0-9_.:-]+$/.test(value)) {
@@ -174,16 +241,37 @@ function sanitizeInterface(name) {
 function run(bin, args) {
   return new Promise((resolve, reject) => {
     const needsSudo = process.platform === 'linux' && process.getuid && process.getuid() !== 0;
-    const command = needsSudo ? 'sudo' : bin;
-    const commandArgs = needsSudo ? ['-n', bin, ...args] : args;
+    const preferDirect = needsSudo && isIpCommand(bin);
+    const command = needsSudo && !preferDirect ? 'sudo' : bin;
+    const commandArgs = needsSudo && !preferDirect ? ['-n', bin, ...args] : args;
     execFile(command, commandArgs, { timeout: 15000 }, (error, stdout, stderr) => {
       if (error) {
+        if (preferDirect) {
+          runWithSudo(bin, args).then(resolve).catch(reject);
+          return;
+        }
         reject(new Error(`${command} ${commandArgs.join(' ')}: ${stderr || error.message}`));
         return;
       }
       resolve({ stdout, stderr });
     });
   });
+}
+
+function runWithSudo(bin, args) {
+  return new Promise((resolve, reject) => {
+    execFile('sudo', ['-n', bin, ...args], { timeout: 15000 }, (error, stdout, stderr) => {
+      if (error) {
+        reject(new Error(`sudo -n ${bin} ${args.join(' ')}: ${stderr || error.message}`));
+        return;
+      }
+      resolve({ stdout, stderr });
+    });
+  });
+}
+
+function isIpCommand(bin) {
+  return String(bin).split(/[\\/]/).pop() === 'ip';
 }
 
 async function resolveConnectionName(interfaceName) {
