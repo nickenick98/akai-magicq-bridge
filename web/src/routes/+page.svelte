@@ -153,7 +153,7 @@
     pollTimer = setInterval(pollStatus, 500);
     ledClockTimer = setInterval(() => {
       ledClock = Date.now();
-    }, 80);
+    }, 40);
   });
 
   onDestroy(() => {
@@ -510,19 +510,20 @@
     const state = ledState(type, value);
     const color = hardwareColor(type, state.color);
     const phase = syncedLedPhase(state.mode, clock);
-    return `--control-color:${color};--control-text:${textColor(state.color)};--effect-color:${color};--blink-color:${phase.blinkOn ? color : '#050706'};--blink-brightness:${phase.blinkBrightness};--pulse-brightness:${phase.pulseBrightness};--pulse-shadow:${phase.pulseShadow};`;
+    return `--control-color:${color};--control-text:${textColor(state.color)};--effect-color:${color};--blink-color:${phase.blinkOn ? color : '#050706'};--blink-brightness:${phase.blinkBrightness};--pulse-brightness:${phase.pulseBrightness};--pulse-shadow-size:${phase.pulseShadowSize};`;
   }
 
   function syncedLedPhase(mode, clock) {
     const blinkOn = mode !== 'blink' || Math.floor(clock / 500) % 2 === 0;
-    const pulseCycle = (clock % 1550) / 1550;
-    const pulseLevel = (Math.sin(pulseCycle * Math.PI * 2 - Math.PI / 2) + 1) / 2;
-    const pulseBrightness = mode === 'pulse' ? (0.16 + 1.12 * pulseLevel).toFixed(3) : '1';
+    const pulseCycle = (clock % 1000) / 1000;
+    const pulseWave = (Math.sin(pulseCycle * Math.PI * 2 - Math.PI / 2) + 1) / 2;
+    const pulseLevel = pulseWave * pulseWave * (3 - 2 * pulseWave);
+    const pulseBrightness = mode === 'pulse' ? (0.22 + 1.08 * pulseLevel).toFixed(3) : '1';
     return {
       blinkOn,
       blinkBrightness: blinkOn ? '1.18' : '1',
       pulseBrightness,
-      pulseShadow: mode === 'pulse' ? (0.08 + 0.92 * pulseLevel).toFixed(3) : '1'
+      pulseShadowSize: mode === 'pulse' ? `${(3 + 20 * pulseLevel).toFixed(1)}px` : '0px'
     };
   }
 
@@ -1618,7 +1619,7 @@
   button.selected { outline: 4px solid #fff; outline-offset: 2px; }
   button.bulk { outline: 3px solid #b8f36d; outline-offset: 2px; }
   .mode-blink { background: var(--blink-color) !important; filter: brightness(var(--blink-brightness)); }
-  .mode-pulse { background: var(--effect-color) !important; filter: brightness(var(--pulse-brightness)) saturate(1.18); box-shadow: 0 0 calc(22px * var(--pulse-shadow)) var(--effect-color), inset 0 -10px 18px rgba(0,0,0,.22); }
+  .mode-pulse { background: var(--effect-color) !important; filter: brightness(var(--pulse-brightness)) saturate(1.18); box-shadow: 0 0 var(--pulse-shadow-size) var(--effect-color), inset 0 -10px 18px rgba(0,0,0,.22); }
   .mode-off { background: #232c25 !important; color: #aebdae !important; }
   .editor { display: grid; align-content: start; gap: 12px; }
   .bulk-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
