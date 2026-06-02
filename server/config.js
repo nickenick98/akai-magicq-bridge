@@ -10,7 +10,14 @@ const APC_DEFAULTS = {
   sceneNotes: Array.from({ length: 8 }, (_, index) => 112 + index),
   controlNotes: Array.from({ length: 8 }, (_, index) => 100 + index),
   shiftNote: 122,
-  faderCcs: Array.from({ length: 9 }, (_, index) => 48 + index)
+  faderCcs: Array.from({ length: 9 }, (_, index) => 48 + index),
+  shiftBehavior: {
+    switchPage: true,
+    guardInternalCombos: true,
+    blockedShiftSources: ['scene', 'control', 'fader', 'cc', 'note'],
+    recoverOnRelease: true,
+    recoverDelaysMs: [80, 250, 800]
+  }
 };
 
 const LEGACY_APC_DEFAULTS = {

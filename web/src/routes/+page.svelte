@@ -1027,6 +1027,25 @@
     return address || '192.168.50.10/24';
   }
 
+  function setApcShiftBehavior(key, value) {
+    config = {
+      ...config,
+      apc: {
+        ...(config.apc || {}),
+        shiftBehavior: {
+          switchPage: true,
+          guardInternalCombos: true,
+          blockedShiftSources: ['scene', 'control', 'fader', 'cc', 'note'],
+          recoverOnRelease: true,
+          recoverDelaysMs: [80, 250, 800],
+          ...(config.apc?.shiftBehavior || {}),
+          [key]: value
+        }
+      }
+    };
+    bumpView();
+  }
+
   async function saveMidiSelection() {
     const data = await (await api('/api/midi/select', { method: 'POST', body: config.midi })).json();
     config = data.config;
@@ -1104,6 +1123,22 @@
             <option value="">Auto</option>
             {#each devices.outputs || [] as output}<option value={output}>{output}</option>{/each}
           </select>
+        </label>
+        <label class="checkbox-row">
+          <input
+            type="checkbox"
+            checked={config.apc?.shiftBehavior?.switchPage !== false}
+            on:change={(event) => setApcShiftBehavior('switchPage', event.currentTarget.checked)}
+          />
+          <span>Shift schaltet Seite 2</span>
+        </label>
+        <label class="checkbox-row">
+          <input
+            type="checkbox"
+            checked={config.apc?.shiftBehavior?.guardInternalCombos !== false}
+            on:change={(event) => setApcShiftBehavior('guardInternalCombos', event.currentTarget.checked)}
+          />
+          <span>AKAI Shift-Kombis blocken</span>
         </label>
       </div>
     </section>

@@ -17,9 +17,11 @@ let pendingConfigWrite = null;
 let ledRefreshTimer = null;
 let midiWatchTimer = null;
 let networkBackupTimer = null;
+let ledRecoveryTimers = new Set();
 let lastMidiDeviceSignature = '';
 let lastMidiReconnectAttemptAt = 0;
 let lastMidiWatchReportAt = 0;
+let lastShiftGuardReportAt = 0;
 let networkBackupApplying = false;
 let lastNetworkApply = null;
 let lastNetworkBackupApply = null;
@@ -155,12 +157,24 @@ midi.on('midi', (event) => {
 
   const sourceType = normalizeSourceType(event, config.apc);
   if (sourceType === 'shift') {
-    config.state = {
-      ...(config.state || {}),
-      currentPage: midi.shiftActive ? 2 : 1
-    };
+    if (shiftSwitchesPage()) {
+      config.state = {
+        ...(config.state || {}),
+        currentPage: midi.shiftActive ? 2 : 1
+      };
+    }
     refreshAllLeds();
+    if (!midi.shiftActive && shiftBehavior().recoverOnRelease !== false) {
+      scheduleHardwareLedRecovery('shift-release');
+    }
     broadcast('page-changed', config.state);
+    broadcast('status', status());
+    return;
+  }
+
+  if (shouldBlockInternalShiftCombo(sourceType, event)) {
+    rememberShiftGuard(sourceType, event);
+    scheduleHardwareLedRecovery('shift-guard');
     broadcast('status', status());
     return;
   }
@@ -541,6 +555,10 @@ function shutdown(signal = 'SIGTERM') {
     clearInterval(networkBackupTimer);
     networkBackupTimer = null;
   }
+  for (const timer of ledRecoveryTimers) {
+    clearTimeout(timer);
+  }
+  ledRecoveryTimers.clear();
   if (pendingConfigWrite) {
     clearTimeout(pendingConfigWrite);
     config.state = writeState(config.state);
@@ -703,6 +721,65 @@ function rememberMidiWatch(message, details = {}) {
   console.warn('[midi-watch]', message, details);
   remember('errors', data);
   broadcast('error', data);
+}
+
+function shiftBehavior() {
+  return {
+    switchPage: true,
+    guardInternalCombos: true,
+    blockedShiftSources: ['scene', 'control', 'fader', 'cc', 'note'],
+    recoverOnRelease: true,
+    recoverDelaysMs: [80, 250, 800],
+    ...(config.apc?.shiftBehavior || {})
+  };
+}
+
+function shiftSwitchesPage() {
+  return shiftBehavior().switchPage !== false;
+}
+
+function shouldBlockInternalShiftCombo(sourceType, event) {
+  const behavior = shiftBehavior();
+  if (behavior.guardInternalCombos === false) return false;
+  if (!midi.shiftActive && !event.shift) return false;
+  if (sourceType === 'shift' || sourceType === 'pad') return false;
+  return (behavior.blockedShiftSources || []).includes(sourceType);
+}
+
+function rememberShiftGuard(sourceType, event) {
+  const now = Date.now();
+  if (now - lastShiftGuardReportAt < 1000) return;
+  lastShiftGuardReportAt = now;
+  const data = {
+    source: 'shift-guard',
+    message: 'Interne AKAI Shift-Kombination geblockt',
+    details: {
+      sourceType,
+      note: event.note,
+      controller: event.controller,
+      event: event.event
+    },
+    at: new Date().toISOString()
+  };
+  console.warn('[shift-guard]', data.message, data.details);
+  remember('errors', data);
+  broadcast('error', data);
+}
+
+function scheduleHardwareLedRecovery(reason = '') {
+  const delays = shiftBehavior().recoverDelaysMs || [80, 250, 800];
+  for (const delay of delays) {
+    const timer = setTimeout(() => {
+      ledRecoveryTimers.delete(timer);
+      try {
+        refreshAllLeds();
+      } catch (error) {
+        reportError(error, reason || 'led-recovery');
+      }
+    }, Math.max(0, Number(delay) || 0));
+    timer.unref?.();
+    ledRecoveryTimers.add(timer);
+  }
 }
 
 function midiDeviceSignature(devices) {
