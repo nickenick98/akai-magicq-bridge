@@ -274,6 +274,7 @@ midi.on('midi', (event) => {
 
 midi.on('status', (data) => broadcast('status', { ...status(), midi: data }));
 midi.on('error', (error) => reportError(error, 'midi'));
+led.on('error', (error) => reportError(error, 'led'));
 
 osc.on('sent', (data) => {
   console.log('[osc:sent]', data);
@@ -609,7 +610,7 @@ function startLedRefreshTimer() {
   if (ledRefreshTimer) clearInterval(ledRefreshTimer);
   ledRefreshTimer = setInterval(() => {
     try {
-      refreshCurrentLayerLeds();
+      refreshAllLeds();
     } catch (error) {
       reportError(error, 'led-refresh');
     }

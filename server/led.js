@@ -1,8 +1,15 @@
-class LedController {
+const EventEmitter = require('events');
+
+class LedController extends EventEmitter {
   constructor(midiBridge) {
+    super();
     this.midiBridge = midiBridge;
     this.timers = new Map();
     this.apc = null;
+    this.pending = new Map();
+    this.queue = [];
+    this.queueTimer = null;
+    this.sendSpacingMs = 3;
   }
 
   setApcLayout(apc) {
@@ -27,6 +34,7 @@ class LedController {
 
   clearAllPads(notes = []) {
     this.stopAll();
+    this.clearQueue();
     const padNotes = notes.length ? notes : Array.from({ length: 64 }, (_, index) => index);
     for (const note of padNotes) {
       this.send(note, 0);
@@ -70,7 +78,26 @@ class LedController {
   }
 
   send(note, color, channel = 0) {
-    this.midiBridge.sendNote(note, color, channel);
+    const normalizedNote = Number(note);
+    if (!isValidMidiValue(normalizedNote)) return;
+
+    const status = this.midiBridge.getStatus?.();
+    if (status && !status.outputConnected) {
+      throw new Error('MIDI output is not connected');
+    }
+
+    const key = String(normalizedNote);
+    const command = {
+      note: normalizedNote,
+      velocity: clampMidiValue(color),
+      channel: clampMidiValue(channel)
+    };
+
+    if (!this.pending.has(key)) {
+      this.queue.push(key);
+    }
+    this.pending.set(key, command);
+    this.pumpQueue();
   }
 
   setButtonLed(note, active) {
@@ -94,6 +121,37 @@ class LedController {
 
   isPad(note) {
     return !this.apc || (this.apc.matrixNotes || []).includes(Number(note));
+  }
+
+  pumpQueue() {
+    if (this.queueTimer || this.queue.length === 0) return;
+
+    this.queueTimer = setTimeout(() => {
+      this.queueTimer = null;
+      const key = this.queue.shift();
+      const command = this.pending.get(key);
+      this.pending.delete(key);
+
+      if (command) {
+        try {
+          this.midiBridge.sendNote(command.note, command.velocity, command.channel);
+        } catch (error) {
+          this.emit('error', error);
+        }
+      }
+
+      this.pumpQueue();
+    }, this.sendSpacingMs);
+    this.queueTimer.unref?.();
+  }
+
+  clearQueue() {
+    if (this.queueTimer) {
+      clearTimeout(this.queueTimer);
+      this.queueTimer = null;
+    }
+    this.pending.clear();
+    this.queue = [];
   }
 }
 
