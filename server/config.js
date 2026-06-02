@@ -18,6 +18,7 @@ const APC_DEFAULTS = {
     recoverOnRelease: true,
     sendIntroductionOnConnect: true,
     sendIntroductionOnRecovery: true,
+    sceneButtonsBlockedOnShift: true,
     recoverDelaysMs: [0, 80, 250, 800]
   }
 };

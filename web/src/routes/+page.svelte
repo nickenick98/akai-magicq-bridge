@@ -480,6 +480,9 @@
     if (type === 'fader') {
       return { hasMapping: Boolean(mapping), active: activeFor(type, value, mapping), color: 0, mode: 'off' };
     }
+    if (sceneButtonsBlockedByShift(type)) {
+      return { hasMapping: Boolean(mapping), active: false, color: 1, mode: 'blink', blocked: true };
+    }
     if (type === 'scene' || type === 'control' || type === 'shift') {
       const liveActive = activeFor(type, value, mapping);
       const previewActive = selected?.type === type && selected.value === value && previewState !== 'live' ? previewState === 'active' : liveActive;
@@ -534,6 +537,7 @@
 
   function readout(type, value) {
     const mapping = mappingFor(type, value);
+    if (sceneButtonsBlockedByShift(type)) return 'Shift block blink';
     if (!mapping) return 'kein map';
     if (mapping?.target?.type === 'disabled') return 'aus';
     const target = targetReadout(mapping);
@@ -565,6 +569,7 @@
   }
 
   function ledReadout(type, mapping, state) {
+    if (state?.blocked) return 'block blink';
     if (type === 'scene' || type === 'control' || type === 'shift') {
       const led = mapping?.led || {};
       return `${state.active ? 'A' : 'O'} ${led.offMode || 'off'}/${led.activeMode || 'solid'}`;
@@ -603,6 +608,10 @@
 
   function textColor(colorCode) {
     return [3, 12, 13, 17, 53, 57, 85, 89, 93, 97, 101, 105, 125, 127].includes(Number(colorCode)) ? '#101412' : '#f8fafc';
+  }
+
+  function sceneButtonsBlockedByShift(type) {
+    return type === 'scene' && status.midi?.shiftActive && config.apc?.shiftBehavior?.sceneButtonsBlockedOnShift !== false;
   }
 
   function matrixToApcDisplay(notes) {
@@ -1039,6 +1048,7 @@
           recoverOnRelease: true,
           sendIntroductionOnConnect: true,
           sendIntroductionOnRecovery: true,
+          sceneButtonsBlockedOnShift: true,
           recoverDelaysMs: [0, 80, 250, 800],
           ...(config.apc?.shiftBehavior || {}),
           [key]: value

@@ -737,6 +737,7 @@ function shiftBehavior() {
     recoverOnRelease: true,
     sendIntroductionOnConnect: true,
     sendIntroductionOnRecovery: true,
+    sceneButtonsBlockedOnShift: true,
     recoverDelaysMs: [0, 80, 250, 800],
     ...(config.apc?.shiftBehavior || {})
   };
@@ -748,6 +749,7 @@ function shiftSwitchesPage() {
 
 function shouldBlockInternalShiftCombo(sourceType, event) {
   const behavior = shiftBehavior();
+  if (sourceType === 'scene' && behavior.sceneButtonsBlockedOnShift !== false && (midi.shiftActive || event.shift)) return true;
   if (behavior.guardInternalCombos === false) return false;
   if (!midi.shiftActive && !event.shift) return false;
   if (sourceType === 'shift' || sourceType === 'pad') return false;
@@ -1065,6 +1067,10 @@ function applyLedSafe(mapping, active) {
 
 function syncPageLeds() {
   if (!midi.getStatus().outputConnected) return;
+  if (sceneButtonsBlockedByShift()) {
+    applyShiftSceneBlockedLeds();
+    return;
+  }
   const currentPage = config.state?.currentPage || 1;
   for (const mapping of config.mappings || []) {
     if (mappingMatchesCurrentLayer(mapping) && mapping.target?.type === 'special' && mapping.target.action === 'select-page') {
@@ -1077,13 +1083,15 @@ function refreshAllLeds() {
   if (!midi.getStatus().outputConnected) return;
   led.clearAllPads(allLedNotes());
   refreshCurrentLayerLeds();
-  syncPageLeds();
+  if (sceneButtonsBlockedByShift()) applyShiftSceneBlockedLeds();
+  else syncPageLeds();
 }
 
 function refreshCurrentLayerLeds() {
   if (!midi.getStatus().outputConnected) return;
   for (const mapping of config.mappings || []) {
     if (!mappingMatchesCurrentLayer(mapping)) continue;
+    if (sceneButtonsBlockedByShift() && mapping.source?.type === 'scene') continue;
     const key = `${mapping.target?.page}/${mapping.target?.executor}`;
     const active = mappingActiveState(mapping, key);
     applyLedSafe(mapping, active);
@@ -1093,6 +1101,10 @@ function refreshCurrentLayerLeds() {
 function refreshMappingsForTarget(type, target) {
   for (const mapping of config.mappings || []) {
     if (!mappingMatchesCurrentLayer(mapping)) continue;
+    if (sceneButtonsBlockedByShift() && mapping.source?.type === 'scene') {
+      applyShiftSceneBlockedLeds();
+      continue;
+    }
     if (mapping.target?.type !== type) continue;
     if (Number(mapping.target.page) !== Number(target.page)) continue;
     if (Number(mapping.target.executor) !== Number(target.executor)) continue;
@@ -1130,9 +1142,24 @@ function mappingActiveState(mapping, executorKey) {
 function refreshMappingLed(mapping) {
   if (!mapping?.source?.note && mapping?.source?.note !== 0) return;
   if (!mappingMatchesCurrentLayer(mapping)) return;
+  if (sceneButtonsBlockedByShift() && mapping.source?.type === 'scene') {
+    applyShiftSceneBlockedLeds();
+    return;
+  }
   const key = `${mapping.target?.page}/${mapping.target?.executor}`;
   applyLedSafe(mapping, mappingActiveState(mapping, key));
   syncPageLeds();
+}
+
+function sceneButtonsBlockedByShift() {
+  return midi.shiftActive && shiftBehavior().sceneButtonsBlockedOnShift !== false;
+}
+
+function applyShiftSceneBlockedLeds() {
+  if (!midi.getStatus().outputConnected) return;
+  for (const note of config.apc.sceneNotes || []) {
+    led.blinkPad(note, 1);
+  }
 }
 
 function isPageAction(action) {
