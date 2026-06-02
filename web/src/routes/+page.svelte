@@ -1522,7 +1522,7 @@
               </label>
             {/if}
           </div>
-          {#if hasLedControls(selected?.type) && editor.target.type !== 'disabled'}
+          {#if hasLedControls(selected?.type)}
             {@render LedControls(editor.led, setEditorLed, selected?.type)}
           {/if}
           <div class="actions">

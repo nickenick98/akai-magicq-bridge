@@ -261,8 +261,6 @@ function migrateMapping(mapping) {
       next.led = { offColor: 0, offMode: 'off', onColor: 1, activeMode: 'solid', ...(next.led || {}) };
       if (next.led.offColor === 1) next.led.offColor = 0;
       if (!next.led.offMode) next.led.offMode = next.led.offColor > 0 ? 'solid' : 'off';
-      next.led.onColor = 1;
-      next.led.activeMode = 'solid';
     }
   }
 
@@ -273,7 +271,6 @@ function migrateMapping(mapping) {
       next.led = { offColor: 0, offMode: 'off', onColor: 1, activeMode: 'solid', ...(next.led || {}) };
       if (next.led.offColor === 1) next.led.offColor = 0;
       if (!next.led.offMode) next.led.offMode = next.led.offColor > 0 ? 'solid' : 'off';
-      next.led.onColor = 1;
     }
   }
 
