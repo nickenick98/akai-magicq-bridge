@@ -288,6 +288,13 @@ osc.on('received', (data) => {
   broadcast('osc-received', data);
 });
 
+osc.on('ignored', (data) => {
+  console.warn('[osc:ignored]', data);
+  remember('errors', { source: 'osc-ignored', ...data });
+  broadcast('error', { source: 'osc-ignored', ...data });
+  broadcast('status', status());
+});
+
 osc.on('status', (data) => broadcast('status', { ...status(), osc: data }));
 osc.on('error', (error) => reportError(error, 'osc'));
 

@@ -9,6 +9,7 @@ class OscBridge extends EventEmitter {
     this.ready = false;
     this.lastSentAt = null;
     this.lastReceivedAt = null;
+    this.lastIgnoredAt = null;
   }
 
   start(config = this.config) {
@@ -26,16 +27,24 @@ class OscBridge extends EventEmitter {
     this.udpPort.on('ready', () => {
       this.ready = true;
       this.emit('status', this.getStatus());
+      if (this.config.magicq.feedbackOnStart !== false) {
+        try {
+          this.requestFeedback();
+        } catch (error) {
+          this.emit('error', error);
+        }
+      }
     });
 
     this.udpPort.on('message', (message, timeTag, info) => {
       const remoteAddress = info?.address || '';
       if (!isAllowedRemote(remoteAddress, this.config.magicq.ip)) {
+        this.lastIgnoredAt = new Date().toISOString();
         this.emit('ignored', {
           address: message.address,
           remote: info ? `${info.address}:${info.port}` : undefined,
           expected: this.config.magicq.ip,
-          at: new Date().toISOString()
+          at: this.lastIgnoredAt
         });
         return;
       }
@@ -91,6 +100,10 @@ class OscBridge extends EventEmitter {
     };
     this.emit('sent', data);
     return data;
+  }
+
+  requestFeedback() {
+    return this.send('/feedback/pb+exec', []);
   }
 
   sendForMapping(mapping, event, level, resolvedValue) {
@@ -187,6 +200,8 @@ class OscBridge extends EventEmitter {
       localPort: this.config.magicq.receivePort,
       lastSentAt: this.lastSentAt,
       lastReceivedAt: this.lastReceivedAt,
+      lastIgnoredAt: this.lastIgnoredAt,
+      feedbackOnStart: this.config.magicq.feedbackOnStart !== false,
       error: error ? error.message : undefined
     };
   }

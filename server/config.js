@@ -102,7 +102,8 @@ const defaultConfig = {
   magicq: {
     ip: '192.168.178.50',
     sendPort: 8000,
-    receivePort: 9000
+    receivePort: 9000,
+    feedbackOnStart: true
   },
   midi: {
     input: '',
