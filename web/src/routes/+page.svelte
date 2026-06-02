@@ -309,6 +309,7 @@
   }
 
   function updateToggleForPress(event) {
+    if (!localStateUpdatesEnabled()) return;
     const type = noteSourceType(event.note);
     if (!type || type === 'shift') return;
     const mapping = mappingFor(type, event.note, event.shift ? 'shift' : activeLayer);
@@ -351,6 +352,7 @@
   }
 
   function updateFlashRelease(event) {
+    if (!localStateUpdatesEnabled()) return;
     const type = noteSourceType(event.note);
     if (!type || type === 'shift') return;
     const mapping = mappingFor(type, event.note, event.shift ? 'shift' : activeLayer);
@@ -364,10 +366,11 @@
   function executorActive(key) {
     if (!key) return false;
     if (status.executorState && key in status.executorState) return Boolean(status.executorState[key]?.active);
-    return Boolean(live.toggles[key]);
+    return localStateUpdatesEnabled() ? Boolean(live.toggles[key]) : false;
   }
 
   function setLocalExecutorState(key, level) {
+    if (!localStateUpdatesEnabled()) return;
     status = {
       ...status,
       executorState: {
@@ -474,7 +477,7 @@
     if (isBlockedShiftScene(type)) return false;
     if (mapping?.target?.type === 'disabled') return false;
     if (type === 'fader') return live.ccs[value] !== undefined;
-    if (live.notes[value]) return true;
+    if (live.notes[value] && localStateUpdatesEnabled()) return true;
     if (mapping?.target?.type === 'magicq-playback-level' || mapping?.target?.type === 'magicq-playback-adjust') {
       return Boolean(status.playbackState?.[mapping.target.playback || 1]?.active);
     }
@@ -1089,6 +1092,21 @@
     bumpView();
   }
 
+  function setLocalStateUpdates(value) {
+    config = {
+      ...config,
+      feedback: {
+        ...(config.feedback || {}),
+        localStateUpdates: value
+      }
+    };
+    bumpView();
+  }
+
+  function localStateUpdatesEnabled() {
+    return config?.feedback?.localStateUpdates !== false;
+  }
+
   async function saveMidiSelection() {
     const data = await (await api('/api/midi/select', { method: 'POST', body: config.midi })).json();
     config = data.config;
@@ -1198,6 +1216,14 @@
             on:change={(event) => setApcShiftBehavior('sendIntroductionOnRecovery', event.currentTarget.checked)}
           />
           <span>APC Host-Modus nach Shift reparieren</span>
+        </label>
+        <label class="checkbox-row">
+          <input
+            type="checkbox"
+            checked={config.feedback?.localStateUpdates !== false}
+            on:change={(event) => setLocalStateUpdates(event.currentTarget.checked)}
+          />
+          <span>Interne Statushaltung erlauben</span>
         </label>
       </div>
     </section>

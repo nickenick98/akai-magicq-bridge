@@ -203,8 +203,9 @@ midi.on('midi', (event) => {
       reportError(error, 'osc');
     }
     if (mapping.target?.type?.startsWith('magicq-executor')) {
-      setExecutorState(mapping.target, level);
-      refreshExecutorTargetLeds(mapping.target);
+      if (setExecutorState(mapping.target, level)) {
+        refreshExecutorTargetLeds(mapping.target);
+      }
     }
     if (mapping.target?.type === 'magicq-playback-level') {
       setPlaybackLevel(mapping.target.playback || 1, level);
@@ -233,7 +234,9 @@ midi.on('midi', (event) => {
       } catch (error) {
         reportError(error, 'osc');
       }
-      setExecutorState(mapping.target, level);
+      if (setExecutorState(mapping.target, level)) {
+        refreshExecutorTargetLeds(mapping.target);
+      }
       broadcast('status', status());
       return;
     }
@@ -245,8 +248,9 @@ midi.on('midi', (event) => {
       } catch (error) {
         reportError(error, 'osc');
       }
-      setExecutorState(mapping.target, active ? 100 : 0);
-      refreshExecutorTargetLeds(mapping.target);
+      if (setExecutorState(mapping.target, active ? 100 : 0)) {
+        refreshExecutorTargetLeds(mapping.target);
+      }
       broadcast('status', status());
       return;
     }
@@ -258,8 +262,9 @@ midi.on('midi', (event) => {
       } catch (error) {
         reportError(error, 'osc');
       }
-      setPlaybackFlash(mapping.target.playback || 1, active ? 1 : 0);
-      applyLedSafe(mapping, active);
+      if (setPlaybackFlash(mapping.target.playback || 1, active ? 1 : 0)) {
+        applyLedSafe(mapping, active);
+      }
       broadcast('status', status());
       return;
     }
@@ -906,8 +911,9 @@ function sendPressMapping(mapping, event) {
   if (target.type === 'magicq-executor-button') {
     const nextLevel = resolveExecutorPressLevel(target);
     osc.sendForMapping(mapping, event, undefined, nextLevel);
-    setExecutorState(target, nextLevel);
-    refreshExecutorTargetLeds(target);
+    if (setExecutorState(target, nextLevel)) {
+      refreshExecutorTargetLeds(target);
+    }
     return;
   }
 
@@ -916,16 +922,18 @@ function sendPressMapping(mapping, event) {
     const current = Number(executorState[key]?.level || 0);
     const nextLevel = clampPercent(current + Number(target.amount || 0));
     osc.sendForMapping(mapping, event, nextLevel);
-    setExecutorState(target, nextLevel);
-    refreshExecutorTargetLeds(target);
+    if (setExecutorState(target, nextLevel)) {
+      refreshExecutorTargetLeds(target);
+    }
     return;
   }
 
   if (target.type === 'magicq-playback-level') {
     const level = clampPercent(target.value ?? 100);
     osc.sendForMapping(mapping, event, level);
-    setPlaybackLevel(target.playback || 1, level);
-    applyLedSafe(mapping, level > 0);
+    if (setPlaybackLevel(target.playback || 1, level)) {
+      applyLedSafe(mapping, level > 0);
+    }
     return;
   }
 
@@ -934,8 +942,9 @@ function sendPressMapping(mapping, event) {
     const current = Number(playbackState[playback]?.level || 0);
     const level = clampPercent(current + Number(target.amount || 0));
     osc.sendForMapping(mapping, event, level);
-    setPlaybackLevel(playback, level);
-    applyLedSafe(mapping, level > 0);
+    if (setPlaybackLevel(playback, level)) {
+      applyLedSafe(mapping, level > 0);
+    }
     return;
   }
 
@@ -943,22 +952,24 @@ function sendPressMapping(mapping, event) {
     const playback = target.playback || 1;
     const nextFlash = playbackState[playback]?.flash ? 0 : 1;
     osc.sendForMapping(mapping, event, undefined, nextFlash);
-    setPlaybackFlash(playback, nextFlash);
-    applyLedSafe(mapping, nextFlash > 0);
+    if (setPlaybackFlash(playback, nextFlash)) {
+      applyLedSafe(mapping, nextFlash > 0);
+    }
     return;
   }
 
   if (target.type === 'magicq-dbo' && target.action === 'toggle') {
     const nextDbo = config.state?.dboActive ? 0 : 1;
-    config.state = { ...(config.state || {}), dboActive: Boolean(nextDbo) };
     osc.sendForMapping(mapping, event, undefined, nextDbo);
-    applyLedSafe(mapping, nextDbo > 0);
+    if (setDboState(nextDbo)) {
+      applyLedSafe(mapping, nextDbo > 0);
+    }
     return;
   }
 
   osc.sendForMapping(mapping, event);
 
-  if (target.type?.startsWith('magicq-') && target.type !== 'magicq-rpc') {
+  if (localStateUpdatesEnabled() && target.type?.startsWith('magicq-') && target.type !== 'magicq-rpc') {
     applyLedSafe(mapping, true);
     setTimeout(() => applyLedSafe(mapping, false), 180);
   }
@@ -972,7 +983,8 @@ function resolveExecutorPressLevel(target) {
   return 100;
 }
 
-function setExecutorState(target, level) {
+function setExecutorState(target, level, source = 'local') {
+  if (source !== 'osc' && !localStateUpdatesEnabled()) return false;
   const key = `${target.page}/${target.executor}`;
   const nextLevel = clampPercent(level);
   executorState[key] = {
@@ -981,25 +993,37 @@ function setExecutorState(target, level) {
     active: nextLevel > 0,
     at: new Date().toISOString()
   };
+  return true;
 }
 
-function setPlaybackLevel(playback, level) {
+function setPlaybackLevel(playback, level, source = 'local') {
+  if (source !== 'osc' && !localStateUpdatesEnabled()) return false;
   const id = Number(playback || 1);
+  const nextLevel = clampPercent(level);
   playbackState[id] = {
     ...(playbackState[id] || {}),
-    level: clampPercent(level),
-    active: clampPercent(level) > 0,
+    level: nextLevel,
+    active: nextLevel > 0,
     at: new Date().toISOString()
   };
+  return true;
 }
 
-function setPlaybackFlash(playback, flash) {
+function setPlaybackFlash(playback, flash, source = 'local') {
+  if (source !== 'osc' && !localStateUpdatesEnabled()) return false;
   const id = Number(playback || 1);
   playbackState[id] = {
     ...(playbackState[id] || {}),
     flash: Number(flash) > 0 ? 1 : 0,
     at: new Date().toISOString()
   };
+  return true;
+}
+
+function setDboState(active, source = 'local') {
+  if (source !== 'osc' && !localStateUpdatesEnabled()) return false;
+  config.state = { ...(config.state || {}), dboActive: Boolean(active) };
+  return true;
 }
 
 function updateFromOscFeedback(data) {
@@ -1011,7 +1035,7 @@ function updateFromOscFeedback(data) {
 
   if (execMatch) {
     const target = { page: Number(execMatch[1]), executor: Number(execMatch[2]) };
-    setExecutorState(target, oscLevelToPercent(firstArg));
+    setExecutorState(target, oscLevelToPercent(firstArg), 'osc');
     refreshMappingsForTarget('magicq-executor-button', target);
     refreshMappingsForTarget('magicq-executor-fader', target);
     broadcast('status', status());
@@ -1019,15 +1043,19 @@ function updateFromOscFeedback(data) {
   }
 
   if (playbackMatch) {
-    setPlaybackLevel(Number(playbackMatch[1]), oscLevelToPercent(firstArg));
+    setPlaybackLevel(Number(playbackMatch[1]), oscLevelToPercent(firstArg), 'osc');
     broadcast('status', status());
     return;
   }
 
   if (playbackFlashMatch) {
-    setPlaybackFlash(Number(playbackFlashMatch[1]), firstArg);
+    setPlaybackFlash(Number(playbackFlashMatch[1]), firstArg, 'osc');
     broadcast('status', status());
   }
+}
+
+function localStateUpdatesEnabled() {
+  return config.feedback?.localStateUpdates !== false;
 }
 
 function oscLevelToPercent(value) {
