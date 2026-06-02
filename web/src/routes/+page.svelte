@@ -477,9 +477,6 @@
 
   function ledState(type, value) {
     const mapping = mappingFor(type, value);
-    if (mapping?.target?.type === 'disabled') {
-      return { hasMapping: true, active: false, color: 0, mode: 'off' };
-    }
     if (type === 'fader') {
       return { hasMapping: Boolean(mapping), active: activeFor(type, value, mapping), color: 0, mode: 'off' };
     }
