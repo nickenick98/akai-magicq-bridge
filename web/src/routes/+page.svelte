@@ -395,6 +395,7 @@
   }
 
   function mappingFor(type, value, layer = activeLayer) {
+    if (isBlockedShiftScene(type, layer)) return undefined;
     const sourceKey = type === 'fader' ? 'cc' : 'note';
     const effectiveLayer = layerForSource(type, layer);
     return (config?.mappings || []).find(
@@ -406,6 +407,7 @@
   }
 
   function createMapping(type, value, layer = activeLayer) {
+    if (isBlockedShiftScene(type, layer)) return null;
     const sourceKey = type === 'fader' ? 'cc' : 'note';
     const isShift = type !== 'fader' && layerForSource(type, layer) === 'shift';
     return {
@@ -431,6 +433,7 @@
 
   function withDefaults(mapping, type, value = 0) {
     const created = mapping || createMapping(type, value);
+    if (!created) return null;
     const next = {
       ...created,
       target: { playback: 1, value: 100, amount: 10, cue: 1, item: 1, zone: 1, command: '', ...(created.target || {}) },
@@ -450,6 +453,14 @@
   }
 
   function selectElement(type, value) {
+    if (isBlockedShiftScene(type)) {
+      selected = null;
+      editor = null;
+      notice = 'S-Buttons sind auf der Shift-Seite gesperrt.';
+      bumpView();
+      return;
+    }
+
     if (multiSelect) {
       toggleSelection(type, value);
       return;
@@ -460,6 +471,7 @@
   }
 
   function activeFor(type, value, mapping) {
+    if (isBlockedShiftScene(type)) return false;
     if (mapping?.target?.type === 'disabled') return false;
     if (type === 'fader') return live.ccs[value] !== undefined;
     if (live.notes[value]) return true;
@@ -611,7 +623,15 @@
   }
 
   function sceneButtonsBlockedByShift(type) {
-    return type === 'scene' && status.midi?.shiftActive && config.apc?.shiftBehavior?.sceneButtonsBlockedOnShift !== false;
+    return isBlockedShiftScene(type);
+  }
+
+  function isBlockedShiftScene(type, layer = activeLayer) {
+    return (
+      type === 'scene' &&
+      config?.apc?.shiftBehavior?.sceneButtonsBlockedOnShift !== false &&
+      (status.midi?.shiftActive || status.state?.currentPage === 2 || layerForSource(type, layer) === 'shift')
+    );
   }
 
   function matrixToApcDisplay(notes) {
@@ -625,6 +645,13 @@
   }
 
   function toggleSelection(type, value) {
+    if (isBlockedShiftScene(type)) {
+      selection = selection.filter((item) => !(item.type === 'scene' && item.layer === 'shift'));
+      notice = 'S-Buttons sind auf der Shift-Seite gesperrt.';
+      bumpView();
+      return;
+    }
+
     const key = selectionKey(type, value);
     selection = selection.some((item) => item.key === key)
       ? selection.filter((item) => item.key !== key)
@@ -663,6 +690,7 @@
   }
 
   function isSelectedBulk(type, value) {
+    if (isBlockedShiftScene(type)) return false;
     return selection.some((item) => item.key === selectionKey(type, value));
   }
 
@@ -772,6 +800,8 @@
   }
 
   function upsertLocalMapping(mapping) {
+    if (!mapping) return;
+    if (isBlockedShiftScene(mapping.source?.type, mapping.source?.shift ? 'shift' : 'normal')) return;
     const mappings = [...(config.mappings || [])];
     const sourceKey = mapping.source?.type === 'fader' ? 'cc' : 'note';
     const sourceShift = mapping.source?.type === 'fader' ? false : Boolean(mapping.source?.shift);
@@ -830,6 +860,7 @@
 
     for (const item of selection) {
       const mapping = withDefaults(mappingFor(item.type, item.value, item.layer) || createMapping(item.type, item.value, item.layer), item.type, item.value);
+      if (!mapping) continue;
       let changedItem = false;
 
       if (bulkTargetEnabled) {
@@ -872,7 +903,7 @@
   }
 
   function quickMapSelection(items = selection, settings = quickMap) {
-    return items.filter((item) => item.type !== 'shift' && Boolean(quickMapTargetFor(item, 0, settings)));
+    return items.filter((item) => item.type !== 'shift' && !isBlockedShiftScene(item.type, item.layer) && Boolean(quickMapTargetFor(item, 0, settings)));
   }
 
   function sourceLabel(item) {

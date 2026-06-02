@@ -246,7 +246,9 @@ function normalizeConfig(config) {
     ? recoverDelays
     : [0, ...recoverDelays];
 
-  next.mappings = (next.mappings || []).map((mapping) => migrateMapping(mapping));
+  next.mappings = (next.mappings || [])
+    .map((mapping) => migrateMapping(mapping))
+    .filter((mapping) => !isBlockedShiftSceneMapping(next, mapping));
   next.state = next.state || { faders: {}, currentPage: 1 };
   next.state.faders = next.state.faders || {};
   next.state.currentPage = next.state.currentPage || 1;
@@ -306,6 +308,14 @@ function migrateMapping(mapping) {
 
   next.source = source;
   return next;
+}
+
+function isBlockedShiftSceneMapping(config, mapping) {
+  return (
+    config?.apc?.shiftBehavior?.sceneButtonsBlockedOnShift !== false &&
+    mapping?.source?.type === 'scene' &&
+    Boolean(mapping.source?.shift)
+  );
 }
 
 function arraysEqual(left = [], right = []) {

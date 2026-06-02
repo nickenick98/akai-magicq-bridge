@@ -749,7 +749,7 @@ function shiftSwitchesPage() {
 
 function shouldBlockInternalShiftCombo(sourceType, event) {
   const behavior = shiftBehavior();
-  if (sourceType === 'scene' && behavior.sceneButtonsBlockedOnShift !== false && (midi.shiftActive || event.shift)) return true;
+  if (sourceType === 'scene' && behavior.sceneButtonsBlockedOnShift !== false && (midi.shiftActive || event.shift || config.state?.currentPage === 2)) return true;
   if (behavior.guardInternalCombos === false) return false;
   if (!midi.shiftActive && !event.shift) return false;
   if (sourceType === 'shift' || sourceType === 'pad') return false;
@@ -1152,7 +1152,7 @@ function refreshMappingLed(mapping) {
 }
 
 function sceneButtonsBlockedByShift() {
-  return midi.shiftActive && shiftBehavior().sceneButtonsBlockedOnShift !== false;
+  return shiftBehavior().sceneButtonsBlockedOnShift !== false && (midi.shiftActive || config.state?.currentPage === 2);
 }
 
 function applyShiftSceneBlockedLeds() {

@@ -46,6 +46,14 @@ function findMapping(event, config, shiftActive) {
 
 function upsertMapping(config, mapping) {
   const normalizedMapping = normalizeMapping(mapping);
+  if (isBlockedShiftSceneMapping(config, normalizedMapping)) {
+    const sourceKey = mappingSourceKey(normalizedMapping);
+    return {
+      ...config,
+      mappings: (config.mappings || []).filter((existing) => mappingSourceKey(existing) !== sourceKey)
+    };
+  }
+
   const mappings = [...(config.mappings || [])];
   const requestedId = normalizedMapping.id || mappingSourceId(normalizedMapping) || `${normalizedMapping.source?.type || 'mapping'}-${Date.now()}`;
   const sourceKey = mappingSourceKey(normalizedMapping);
@@ -92,6 +100,14 @@ function normalizeMapping(mapping) {
       shift: false
     }
   };
+}
+
+function isBlockedShiftSceneMapping(config, mapping) {
+  return (
+    config?.apc?.shiftBehavior?.sceneButtonsBlockedOnShift !== false &&
+    mapping?.source?.type === 'scene' &&
+    Boolean(mapping.source?.shift)
+  );
 }
 
 function deleteMapping(config, id) {
