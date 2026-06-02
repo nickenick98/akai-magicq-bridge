@@ -202,6 +202,23 @@ class MidiBridge extends EventEmitter {
     this.output.send('noteon', { note: Number(note), velocity: Number(velocity), channel: Number(channel) });
   }
 
+  sendSysex(bytes) {
+    if (!this.output) {
+      throw new Error('MIDI output is not connected');
+    }
+
+    const data = Array.from(bytes || []).map((value) => Number(value));
+    if (data.length < 3 || data[0] !== 0xf0 || data[data.length - 1] !== 0xf7) {
+      throw new Error('Invalid MIDI SysEx message');
+    }
+
+    this.output.send('sysex', data);
+  }
+
+  sendApcIntroduction() {
+    this.sendSysex([0xf0, 0x47, 0x7f, 0x4f, 0x60, 0x00, 0x04, 0x00, 0x01, 0x00, 0x00, 0xf7]);
+  }
+
   getStatus(error) {
     return {
       input: this.inputName,

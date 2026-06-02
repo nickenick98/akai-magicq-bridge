@@ -1037,6 +1037,8 @@
           guardInternalCombos: true,
           blockedShiftSources: ['scene', 'control', 'fader', 'cc', 'note'],
           recoverOnRelease: true,
+          sendIntroductionOnConnect: true,
+          sendIntroductionOnRecovery: true,
           recoverDelaysMs: [80, 250, 800],
           ...(config.apc?.shiftBehavior || {}),
           [key]: value
@@ -1139,6 +1141,22 @@
             on:change={(event) => setApcShiftBehavior('guardInternalCombos', event.currentTarget.checked)}
           />
           <span>AKAI Shift-Kombis blocken</span>
+        </label>
+        <label class="checkbox-row">
+          <input
+            type="checkbox"
+            checked={config.apc?.shiftBehavior?.sendIntroductionOnConnect !== false}
+            on:change={(event) => setApcShiftBehavior('sendIntroductionOnConnect', event.currentTarget.checked)}
+          />
+          <span>APC Host-Modus beim Verbinden setzen</span>
+        </label>
+        <label class="checkbox-row">
+          <input
+            type="checkbox"
+            checked={config.apc?.shiftBehavior?.sendIntroductionOnRecovery !== false}
+            on:change={(event) => setApcShiftBehavior('sendIntroductionOnRecovery', event.currentTarget.checked)}
+          />
+          <span>APC Host-Modus nach Shift reparieren</span>
         </label>
       </div>
     </section>

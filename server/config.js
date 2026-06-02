@@ -16,6 +16,8 @@ const APC_DEFAULTS = {
     guardInternalCombos: true,
     blockedShiftSources: ['scene', 'control', 'fader', 'cc', 'note'],
     recoverOnRelease: true,
+    sendIntroductionOnConnect: true,
+    sendIntroductionOnRecovery: true,
     recoverDelaysMs: [80, 250, 800]
   }
 };

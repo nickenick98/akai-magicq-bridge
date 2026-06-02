@@ -141,6 +141,7 @@ function reconnect(options = {}) {
     reportError(error, 'osc');
   }
   if (midiStatus.outputConnected) {
+    sendApcIntroductionSafe('connect');
     refreshAllLeds();
   } else {
     syncPageLeds();
@@ -354,6 +355,10 @@ app.get('/api/midi/devices', (req, res) => {
 app.post('/api/midi/select', (req, res) => {
   config = updateConfig({ midi: { input: req.body.input || '', output: req.body.output || '' } });
   const midiStatus = midi.connect(config);
+  if (midiStatus.outputConnected) {
+    sendApcIntroductionSafe('connect');
+    refreshAllLeds();
+  }
   lastMidiDeviceSignature = midiDeviceSignature(midi.listDevices());
   broadcast('status', status());
   res.json({ config, status: midiStatus });
@@ -697,6 +702,7 @@ function watchMidiDevices() {
     lastMidiReconnectAttemptAt = now;
     const nextStatus = midi.connect(config);
     if (nextStatus.outputConnected) {
+      sendApcIntroductionSafe('midi-watch');
       refreshAllLeds();
     }
     broadcast('status', status());
@@ -729,6 +735,8 @@ function shiftBehavior() {
     guardInternalCombos: true,
     blockedShiftSources: ['scene', 'control', 'fader', 'cc', 'note'],
     recoverOnRelease: true,
+    sendIntroductionOnConnect: true,
+    sendIntroductionOnRecovery: true,
     recoverDelaysMs: [80, 250, 800],
     ...(config.apc?.shiftBehavior || {})
   };
@@ -772,6 +780,7 @@ function scheduleHardwareLedRecovery(reason = '') {
     const timer = setTimeout(() => {
       ledRecoveryTimers.delete(timer);
       try {
+        sendApcIntroductionSafe(reason || 'led-recovery');
         refreshAllLeds();
       } catch (error) {
         reportError(error, reason || 'led-recovery');
@@ -779,6 +788,20 @@ function scheduleHardwareLedRecovery(reason = '') {
     }, Math.max(0, Number(delay) || 0));
     timer.unref?.();
     ledRecoveryTimers.add(timer);
+  }
+}
+
+function sendApcIntroductionSafe(reason = 'apc-introduction') {
+  const behavior = shiftBehavior();
+  const isConnect = reason === 'connect' || reason === 'midi-watch';
+  if (isConnect && behavior.sendIntroductionOnConnect === false) return;
+  if (!isConnect && behavior.sendIntroductionOnRecovery === false) return;
+  if (!midi.getStatus().outputConnected) return;
+
+  try {
+    midi.sendApcIntroduction();
+  } catch (error) {
+    reportError(error, reason || 'apc-introduction');
   }
 }
 
