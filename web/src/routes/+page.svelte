@@ -1039,7 +1039,7 @@
           recoverOnRelease: true,
           sendIntroductionOnConnect: true,
           sendIntroductionOnRecovery: true,
-          recoverDelaysMs: [80, 250, 800],
+          recoverDelaysMs: [0, 80, 250, 800],
           ...(config.apc?.shiftBehavior || {}),
           [key]: value
         }

@@ -737,7 +737,7 @@ function shiftBehavior() {
     recoverOnRelease: true,
     sendIntroductionOnConnect: true,
     sendIntroductionOnRecovery: true,
-    recoverDelaysMs: [80, 250, 800],
+    recoverDelaysMs: [0, 80, 250, 800],
     ...(config.apc?.shiftBehavior || {})
   };
 }
@@ -775,19 +775,28 @@ function rememberShiftGuard(sourceType, event) {
 }
 
 function scheduleHardwareLedRecovery(reason = '') {
-  const delays = shiftBehavior().recoverDelaysMs || [80, 250, 800];
+  const delays = [...new Set(shiftBehavior().recoverDelaysMs || [0, 80, 250, 800])];
   for (const delay of delays) {
+    if (Math.max(0, Number(delay) || 0) === 0) {
+      recoverApcHardware(reason || 'led-recovery');
+      continue;
+    }
+
     const timer = setTimeout(() => {
       ledRecoveryTimers.delete(timer);
-      try {
-        sendApcIntroductionSafe(reason || 'led-recovery');
-        refreshAllLeds();
-      } catch (error) {
-        reportError(error, reason || 'led-recovery');
-      }
+      recoverApcHardware(reason || 'led-recovery');
     }, Math.max(0, Number(delay) || 0));
     timer.unref?.();
     ledRecoveryTimers.add(timer);
+  }
+}
+
+function recoverApcHardware(reason = 'led-recovery') {
+  try {
+    sendApcIntroductionSafe(reason);
+    refreshAllLeds();
+  } catch (error) {
+    reportError(error, reason || 'led-recovery');
   }
 }
 

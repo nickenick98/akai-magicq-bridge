@@ -18,7 +18,7 @@ const APC_DEFAULTS = {
     recoverOnRelease: true,
     sendIntroductionOnConnect: true,
     sendIntroductionOnRecovery: true,
-    recoverDelaysMs: [80, 250, 800]
+    recoverDelaysMs: [0, 80, 250, 800]
   }
 };
 
@@ -233,6 +233,17 @@ function normalizeConfig(config) {
   if (next.apc.shiftNote === LEGACY_APC_DEFAULTS.shiftNote) {
     next.apc.shiftNote = APC_DEFAULTS.shiftNote;
   }
+
+  next.apc.shiftBehavior = {
+    ...APC_DEFAULTS.shiftBehavior,
+    ...(next.apc.shiftBehavior || {})
+  };
+  const recoverDelays = Array.isArray(next.apc.shiftBehavior.recoverDelaysMs)
+    ? next.apc.shiftBehavior.recoverDelaysMs.map((value) => Math.max(0, Number(value) || 0))
+    : APC_DEFAULTS.shiftBehavior.recoverDelaysMs;
+  next.apc.shiftBehavior.recoverDelaysMs = recoverDelays.some((delay) => delay === 0)
+    ? recoverDelays
+    : [0, ...recoverDelays];
 
   next.mappings = (next.mappings || []).map((mapping) => migrateMapping(mapping));
   next.state = next.state || { faders: {}, currentPage: 1 };
