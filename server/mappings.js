@@ -27,7 +27,7 @@ function eventMatchesSource(event, source, shiftActive, apc) {
     return event.event === 'cc' && event.controller === source.cc;
   }
 
-  if (source.shift !== undefined && Boolean(source.shift) !== Boolean(shiftActive)) {
+  if (source.type !== 'shift' && Boolean(source.shift) !== Boolean(shiftActive)) {
     return false;
   }
 

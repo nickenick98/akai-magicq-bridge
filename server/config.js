@@ -315,6 +315,10 @@ function migrateMapping(mapping) {
     next.id = `fader-${source.cc}`;
   }
 
+  if (source.type && source.type !== 'fader' && source.type !== 'shift' && source.shift === undefined) {
+    source.shift = false;
+  }
+
   next.source = source;
   return next;
 }
