@@ -1075,7 +1075,7 @@
         shiftBehavior: {
           switchPage: true,
           guardInternalCombos: true,
-          blockedShiftSources: ['scene', 'control', 'fader', 'cc', 'note'],
+          blockedShiftSources: ['scene', 'fader', 'cc', 'note'],
           recoverOnRelease: true,
           sendIntroductionOnConnect: true,
           sendIntroductionOnRecovery: true,

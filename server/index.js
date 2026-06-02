@@ -733,7 +733,7 @@ function shiftBehavior() {
   return {
     switchPage: true,
     guardInternalCombos: true,
-    blockedShiftSources: ['scene', 'control', 'fader', 'cc', 'note'],
+    blockedShiftSources: ['scene', 'fader', 'cc', 'note'],
     recoverOnRelease: true,
     sendIntroductionOnConnect: true,
     sendIntroductionOnRecovery: true,
@@ -750,6 +750,7 @@ function shiftSwitchesPage() {
 function shouldBlockInternalShiftCombo(sourceType, event) {
   const behavior = shiftBehavior();
   if (sourceType === 'scene' && behavior.sceneButtonsBlockedOnShift !== false && (midi.shiftActive || event.shift || config.state?.currentPage === 2)) return true;
+  if (sourceType === 'control') return false;
   if (behavior.guardInternalCombos === false) return false;
   if (!midi.shiftActive && !event.shift) return false;
   if (sourceType === 'shift' || sourceType === 'pad') return false;

@@ -14,7 +14,7 @@ const APC_DEFAULTS = {
   shiftBehavior: {
     switchPage: true,
     guardInternalCombos: true,
-    blockedShiftSources: ['scene', 'control', 'fader', 'cc', 'note'],
+    blockedShiftSources: ['scene', 'fader', 'cc', 'note'],
     recoverOnRelease: true,
     sendIntroductionOnConnect: true,
     sendIntroductionOnRecovery: true,
@@ -239,6 +239,7 @@ function normalizeConfig(config) {
     ...APC_DEFAULTS.shiftBehavior,
     ...(next.apc.shiftBehavior || {})
   };
+  next.apc.shiftBehavior.blockedShiftSources = normalizeBlockedShiftSources(next.apc.shiftBehavior.blockedShiftSources);
   const recoverDelays = Array.isArray(next.apc.shiftBehavior.recoverDelaysMs)
     ? next.apc.shiftBehavior.recoverDelaysMs.map((value) => Math.max(0, Number(value) || 0))
     : APC_DEFAULTS.shiftBehavior.recoverDelaysMs;
@@ -316,6 +317,11 @@ function isBlockedShiftSceneMapping(config, mapping) {
     mapping?.source?.type === 'scene' &&
     Boolean(mapping.source?.shift)
   );
+}
+
+function normalizeBlockedShiftSources(sources) {
+  const values = Array.isArray(sources) ? sources : APC_DEFAULTS.shiftBehavior.blockedShiftSources;
+  return [...new Set(values.filter((source) => source !== 'control'))];
 }
 
 function arraysEqual(left = [], right = []) {
