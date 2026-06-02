@@ -10,6 +10,7 @@ class OscBridge extends EventEmitter {
     this.lastSentAt = null;
     this.lastReceivedAt = null;
     this.lastIgnoredAt = null;
+    this.feedbackTimer = null;
   }
 
   start(config = this.config) {
@@ -27,13 +28,7 @@ class OscBridge extends EventEmitter {
     this.udpPort.on('ready', () => {
       this.ready = true;
       this.emit('status', this.getStatus());
-      if (this.config.magicq.feedbackOnStart !== false) {
-        try {
-          this.requestFeedback();
-        } catch (error) {
-          this.emit('error', error);
-        }
-      }
+      this.startFeedbackPolling();
     });
 
     this.udpPort.on('message', (message, timeTag, info) => {
@@ -70,6 +65,7 @@ class OscBridge extends EventEmitter {
   }
 
   stop() {
+    this.stopFeedbackPolling();
     if (!this.udpPort) return;
     try {
       this.udpPort.close();
@@ -78,6 +74,28 @@ class OscBridge extends EventEmitter {
     }
     this.udpPort = null;
     this.ready = false;
+  }
+
+  startFeedbackPolling() {
+    this.stopFeedbackPolling();
+
+    if (this.config.magicq.feedbackOnStart === false) return;
+
+    this.requestFeedbackSafe();
+
+    const intervalMs = Number(this.config.magicq.feedbackIntervalMs || 0);
+    if (!Number.isFinite(intervalMs) || intervalMs <= 0) return;
+
+    this.feedbackTimer = setInterval(() => {
+      this.requestFeedbackSafe();
+    }, Math.max(1000, intervalMs));
+    this.feedbackTimer.unref?.();
+  }
+
+  stopFeedbackPolling() {
+    if (!this.feedbackTimer) return;
+    clearInterval(this.feedbackTimer);
+    this.feedbackTimer = null;
   }
 
   send(address, args = []) {
@@ -104,6 +122,15 @@ class OscBridge extends EventEmitter {
 
   requestFeedback() {
     return this.send('/feedback/pb+exec', []);
+  }
+
+  requestFeedbackSafe() {
+    try {
+      return this.requestFeedback();
+    } catch (error) {
+      this.emit('error', error);
+      return null;
+    }
   }
 
   sendForMapping(mapping, event, level, resolvedValue) {
@@ -202,6 +229,7 @@ class OscBridge extends EventEmitter {
       lastReceivedAt: this.lastReceivedAt,
       lastIgnoredAt: this.lastIgnoredAt,
       feedbackOnStart: this.config.magicq.feedbackOnStart !== false,
+      feedbackIntervalMs: Number(this.config.magicq.feedbackIntervalMs || 0),
       error: error ? error.message : undefined
     };
   }

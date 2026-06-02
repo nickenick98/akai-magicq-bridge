@@ -103,7 +103,8 @@ const defaultConfig = {
     ip: '192.168.178.50',
     sendPort: 8000,
     receivePort: 9000,
-    feedbackOnStart: true
+    feedbackOnStart: true,
+    feedbackIntervalMs: 5000
   },
   midi: {
     input: '',
