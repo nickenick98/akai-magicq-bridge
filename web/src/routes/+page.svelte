@@ -1147,10 +1147,9 @@
   function compactInterfaceAddresses(interfaces = [], limit = 6) {
     const addresses = interfaceAddresses(interfaces)
       .filter((address) => address.name !== 'lo')
-      .filter((address) => address.family !== 'IPv6' || !String(address.address || '').toLowerCase().startsWith('fe80:'))
+      .filter((address) => address.family === 'IPv4')
       .sort((a, b) => {
-        if (a.family === b.family) return a.name.localeCompare(b.name);
-        return a.family === 'IPv4' ? -1 : 1;
+        return a.name.localeCompare(b.name);
       });
     return {
       visible: addresses.slice(0, limit),
