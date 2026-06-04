@@ -48,7 +48,8 @@ const liveInputState = {
   notes: {},
   ccs: {}
 };
-hydrateRuntimeState(config.state);
+hydrateRuntimeState(config.state, { reset: true });
+config.state = writeState(config.state);
 
 app.use(cors());
 app.use(express.json({ limit: '1mb' }));
@@ -350,7 +351,7 @@ app.post('/api/backup/restore', (req, res) => {
     const restored = restoreBackupPayload(req.body || {});
     config = writeConfig(restored.config);
     config.state = writeState(restored.state);
-    hydrateRuntimeState(config.state);
+    hydrateRuntimeState(config.state, { reset: true });
     led.setApcLayout(config.apc);
     reconnect();
     startNetworkBackupTimer();
@@ -596,7 +597,7 @@ function shutdown(signal = 'SIGTERM') {
   ledRecoveryTimers.clear();
   if (pendingConfigWrite) {
     clearTimeout(pendingConfigWrite);
-    config.state = writeState(config.state);
+    writeState(config.state);
   }
   led.stopAll();
   midi.close();
@@ -1072,7 +1073,7 @@ function scheduleStateWrite(delayMs = 300) {
   if (pendingConfigWrite) clearTimeout(pendingConfigWrite);
   pendingConfigWrite = setTimeout(() => {
     pendingConfigWrite = null;
-    config.state = writeState(config.state);
+    writeState(config.state);
   }, delayMs);
 }
 
@@ -1165,14 +1166,6 @@ function setExecutorState(target, level, source = 'local') {
     active: nextLevel > 0,
     at: new Date().toISOString()
   };
-  config.state = {
-    ...(config.state || {}),
-    executorState: {
-      ...(config.state?.executorState || {}),
-      [key]: executorState[key]
-    }
-  };
-  scheduleStateWrite();
   return true;
 }
 
@@ -1186,14 +1179,6 @@ function setPlaybackLevel(playback, level, source = 'local') {
     active: nextLevel > 0,
     at: new Date().toISOString()
   };
-  config.state = {
-    ...(config.state || {}),
-    playbackState: {
-      ...(config.state?.playbackState || {}),
-      [id]: playbackState[id]
-    }
-  };
-  scheduleStateWrite();
   return true;
 }
 
@@ -1205,21 +1190,12 @@ function setPlaybackFlash(playback, flash, source = 'local') {
     flash: Number(flash) > 0 ? 1 : 0,
     at: new Date().toISOString()
   };
-  config.state = {
-    ...(config.state || {}),
-    playbackState: {
-      ...(config.state?.playbackState || {}),
-      [id]: playbackState[id]
-    }
-  };
-  scheduleStateWrite();
   return true;
 }
 
 function setDboState(active, source = 'local') {
   if (source !== 'osc' && !localStateUpdatesEnabled()) return false;
   config.state = { ...(config.state || {}), dboActive: Boolean(active) };
-  scheduleStateWrite();
   return true;
 }
 
@@ -1271,9 +1247,14 @@ function percentToFloat(value) {
   return { type: 'f', value: clampPercent(value) / 100 };
 }
 
-function hydrateRuntimeState(state = {}) {
-  replaceObject(executorState, state.executorState || {});
-  replaceObject(playbackState, state.playbackState || {});
+function hydrateRuntimeState(state = {}, options = {}) {
+  delete state.executorState;
+  delete state.playbackState;
+  delete state.dboActive;
+  if (options.reset) {
+    replaceObject(executorState, {});
+    replaceObject(playbackState, {});
+  }
 }
 
 function replaceObject(target, source) {

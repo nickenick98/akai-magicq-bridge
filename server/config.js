@@ -212,7 +212,7 @@ function readState() {
   }
 
   try {
-    return deepMerge({ faders: {}, currentPage: 1 }, JSON.parse(fs.readFileSync(STATE_PATH, 'utf8')));
+    return persistentState(JSON.parse(fs.readFileSync(STATE_PATH, 'utf8')));
   } catch (error) {
     return { faders: {}, currentPage: 1 };
   }
@@ -220,9 +220,17 @@ function readState() {
 
 function writeState(state) {
   fs.mkdirSync(DATA_DIR, { recursive: true });
-  const nextState = deepMerge({ faders: {}, currentPage: 1 }, state || {});
+  const nextState = persistentState(state);
   fs.writeFileSync(STATE_PATH, `${JSON.stringify(nextState, null, 2)}\n`, 'utf8');
   return nextState;
+}
+
+function persistentState(state = {}) {
+  const merged = deepMerge({ faders: {}, currentPage: 1 }, state || {});
+  return {
+    faders: merged.faders || {},
+    currentPage: merged.currentPage || 1
+  };
 }
 
 function normalizeConfig(config) {
