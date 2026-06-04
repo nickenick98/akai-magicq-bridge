@@ -105,6 +105,8 @@
   let wsState = 'offline';
   let pollTimer = null;
   let ledClockTimer = null;
+  let systemUpdateTimer = null;
+  let systemUpdatePollUntil = 0;
   let ledClock = Date.now();
 
   let activeLayer = 'normal';
@@ -161,6 +163,7 @@
   onDestroy(() => {
     if (pollTimer) clearInterval(pollTimer);
     if (ledClockTimer) clearInterval(ledClockTimer);
+    stopSystemUpdatePoll();
     if (ws) ws.close();
   });
 
@@ -1197,14 +1200,49 @@
     return update.state || 'unbekannt';
   }
 
+  function applySystemUpdate(update) {
+    if (!update) return;
+    status = { ...status, systemUpdate: update };
+    bumpView();
+  }
+
+  function systemUpdateInProgress(update = status.systemUpdate || {}) {
+    return Boolean(update.running || update.checking || update.state === 'running' || update.state === 'checking' || update.state === 'restarting');
+  }
+
+  function startSystemUpdatePoll(durationMs = 45000) {
+    systemUpdatePollUntil = Math.max(systemUpdatePollUntil, Date.now() + durationMs);
+    if (systemUpdateTimer) return;
+    systemUpdateTimer = setInterval(refreshSystemUpdate, 1000);
+    refreshSystemUpdate();
+  }
+
+  function stopSystemUpdatePoll() {
+    if (systemUpdateTimer) clearInterval(systemUpdateTimer);
+    systemUpdateTimer = null;
+    systemUpdatePollUntil = 0;
+  }
+
+  async function refreshSystemUpdate() {
+    try {
+      const response = await fetch('/api/system/update', { cache: 'no-store' });
+      if (!response.ok) throw new Error(await response.text());
+      const update = await response.json();
+      applySystemUpdate(update);
+      if (!systemUpdateInProgress(update)) stopSystemUpdatePoll();
+    } catch {
+      if (Date.now() > systemUpdatePollUntil) stopSystemUpdatePoll();
+    }
+  }
+
   async function checkSystemUpdate(quiet = false) {
     if (!canCheckSystemUpdate()) return;
     try {
       const response = await api('/api/system/update/check', { method: 'POST', quiet: true });
       const data = await response.json();
-      status = { ...status, systemUpdate: data.update };
+      applySystemUpdate(data.update);
+      startSystemUpdatePoll(45000);
       if (!quiet) notice = `Update-Pruefung: ${systemUpdateLabel(data.update)}`;
-      bumpView();
     } catch (err) {
       if (!quiet) error = `Update-Pruefung: ${err.message}`;
     }
@@ -1215,9 +1253,9 @@
     if (!window.confirm('Update starten? Die Bridge zieht Git, baut neu und startet den Service neu.')) return;
     const response = await api('/api/system/update', { method: 'POST' });
     const data = await response.json();
-    status = { ...status, systemUpdate: data.update };
+    applySystemUpdate(data.update);
+    startSystemUpdatePoll(120000);
     notice = 'Update gestartet. Die Bridge startet nach dem Build neu.';
-    bumpView();
   }
 
   async function saveMidiSelection() {
