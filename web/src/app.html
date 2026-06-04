@@ -11,12 +11,26 @@
       <h1 style="margin: 0 0 8px;">APC MagicQ Bridge</h1>
       <p style="margin: 0 0 16px;">Frontend wird geladen...</p>
       <p style="margin: 0; color: #9fb3a8;">Wenn diese Meldung bleibt: Browser neu laden oder den Service neu starten.</p>
+      <pre id="bridge-fallback-error" style="display: none; margin-top: 16px; padding: 12px; max-width: 960px; overflow: auto; color: #ffd4d4; background: #2a1111; border: 1px solid #763232; white-space: pre-wrap;"></pre>
     </div>
     <script>
+      window.__akaiBridgeShowFallbackError = (message) => {
+        const fallback = document.getElementById('bridge-fallback');
+        const output = document.getElementById('bridge-fallback-error');
+        if (!fallback || !output) return;
+        output.style.display = 'block';
+        output.textContent = String(message || 'Unbekannter Frontend-Fehler');
+      };
       window.__akaiBridgeHideFallback = () => {
         const fallback = document.getElementById('bridge-fallback');
         if (fallback) fallback.remove();
       };
+      window.addEventListener('error', (event) => {
+        window.__akaiBridgeShowFallbackError(event.message || event.error?.message || event.filename);
+      });
+      window.addEventListener('unhandledrejection', (event) => {
+        window.__akaiBridgeShowFallbackError(event.reason?.stack || event.reason?.message || event.reason);
+      });
     </script>
     <div style="display: contents">%sveltekit.body%</div>
   </body>
