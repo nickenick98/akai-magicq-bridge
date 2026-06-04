@@ -909,50 +909,67 @@ function resendStoredOscStates(reason = 'timer') {
   const seenExec = new Set();
   const seenPlaybackLevel = new Set();
   const seenPlaybackFlash = new Set();
+  const seenTenScene = new Set();
   const sent = [];
+  const options = { silent: reason === 'timer' };
 
-  for (const [key, state] of Object.entries(executorState)) {
-    const target = executorTargetFromKey(key);
-    if (!target) continue;
-    seenExec.add(key);
-    sent.push(sendExecutorLevel(target, state.level));
-  }
+  for (const mapping of config.mappings || []) {
+    const target = mapping.target || {};
+    if (!target.type || target.type === 'disabled') continue;
 
-  for (const fader of Object.values(config.state?.faders || {})) {
-    const target = fader?.target || {};
-    const level = fader?.level;
     if (target.type === 'magicq-executor-fader') {
+      const level = mappedFaderLevel(mapping);
+      if (level === undefined) continue;
       const key = `${target.page}/${target.executor}`;
       if (!seenExec.has(key)) {
         seenExec.add(key);
-        sent.push(sendExecutorLevel(target, level));
+        sent.push(sendExecutorLevel(target, level, options));
       }
+      continue;
     }
-    if (target.type === 'magicq-playback-level') {
+
+    if (target.type === 'magicq-executor-button' || target.type === 'magicq-executor-adjust') {
+      const key = `${target.page}/${target.executor}`;
+      const state = executorState[key];
+      if (!state || state.level === undefined || seenExec.has(key)) continue;
+      seenExec.add(key);
+      sent.push(sendExecutorLevel(target, state.level, options));
+      continue;
+    }
+
+    if (target.type === 'magicq-playback-level' || target.type === 'magicq-playback-adjust') {
       const playback = String(target.playback || target.executor || 1);
-      if (!seenPlaybackLevel.has(playback)) {
+      const level = mappedFaderLevel(mapping) ?? playbackState[playback]?.level;
+      if (level !== undefined && !seenPlaybackLevel.has(playback)) {
         seenPlaybackLevel.add(playback);
-        sent.push(sendPlaybackLevel(playback, level));
+        sent.push(sendPlaybackLevel(playback, level, options));
       }
+      continue;
     }
+
+    if (target.type === 'magicq-playback-flash') {
+      const playback = String(target.playback || 1);
+      const flash = playbackState[playback]?.flash;
+      if (flash !== undefined && !seenPlaybackFlash.has(playback)) {
+        seenPlaybackFlash.add(playback);
+        sent.push(osc.send(`/pb/${playback}/flash`, [Number(flash) > 0 ? 1 : 0], options));
+      }
+      continue;
+    }
+
     if (target.type === 'magicq-10scene') {
-      sent.push(sendTenSceneLevel(target, level));
+      const level = mappedFaderLevel(mapping);
+      const key = `${target.item || 1}/${target.zone || 1}`;
+      if (level !== undefined && !seenTenScene.has(key)) {
+        seenTenScene.add(key);
+        sent.push(sendTenSceneLevel(target, level, options));
+      }
+      continue;
     }
-  }
 
-  for (const [playback, state] of Object.entries(playbackState)) {
-    if (state.level !== undefined && !seenPlaybackLevel.has(playback)) {
-      seenPlaybackLevel.add(playback);
-      sent.push(sendPlaybackLevel(playback, state.level));
+    if (target.type === 'magicq-dbo' && config.state?.dboActive !== undefined) {
+      sent.push(osc.send('/dbo', [config.state.dboActive ? 1 : 0], options));
     }
-    if (state.flash !== undefined && !seenPlaybackFlash.has(playback)) {
-      seenPlaybackFlash.add(playback);
-      sent.push(osc.send(`/pb/${playback}/flash`, [Number(state.flash) > 0 ? 1 : 0]));
-    }
-  }
-
-  if (config.state?.dboActive !== undefined) {
-    sent.push(osc.send('/dbo', [config.state.dboActive ? 1 : 0]));
   }
 
   lastOscStateResend = {
@@ -966,26 +983,23 @@ function resendStoredOscStates(reason = 'timer') {
   return lastOscStateResend;
 }
 
-function sendExecutorLevel(target, level) {
+function mappedFaderLevel(mapping) {
+  if (mapping?.source?.type !== 'fader') return undefined;
+  const fader = config.state?.faders?.[mapping.source.cc];
+  return fader && fader.level !== undefined ? fader.level : undefined;
+}
+
+function sendExecutorLevel(target, level, options = {}) {
   if (!Number.isFinite(Number(target.page)) || !Number.isFinite(Number(target.executor))) return null;
-  return osc.send(`/exec/${target.page}/${target.executor}`, [percentToFloat(level)]);
+  return osc.send(`/exec/${target.page}/${target.executor}`, [percentToFloat(level)], options);
 }
 
-function sendPlaybackLevel(playback, level) {
-  return osc.send(`/pb/${playback}`, [clampPercent(level)]);
+function sendPlaybackLevel(playback, level, options = {}) {
+  return osc.send(`/pb/${playback}`, [clampPercent(level)], options);
 }
 
-function sendTenSceneLevel(target, level) {
-  return osc.send(`/10scene/${target.item || 1}/${target.zone || 1}`, [percentToFloat(level)]);
-}
-
-function executorTargetFromKey(key) {
-  const match = String(key).match(/^(\d+)\/(\d+)$/);
-  if (!match) return null;
-  return {
-    page: Number(match[1]),
-    executor: Number(match[2])
-  };
+function sendTenSceneLevel(target, level, options = {}) {
+  return osc.send(`/10scene/${target.item || 1}/${target.zone || 1}`, [percentToFloat(level)], options);
 }
 
 async function startNetworkBackup() {
