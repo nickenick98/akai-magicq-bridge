@@ -99,7 +99,16 @@
 
   let config = null;
   let devices = { inputs: [], outputs: [] };
-  let status = {};
+  const defaultSystemUpdate = {
+    state: 'idle',
+    running: false,
+    checking: false,
+    githubReachable: null,
+    updateAvailable: false,
+    behind: 0
+  };
+
+  let status = { systemUpdate: defaultSystemUpdate };
   let recent = { midi: [], oscSent: [], oscReceived: [], errors: [] };
   let ws = null;
   let wsState = 'offline';
@@ -176,6 +185,7 @@
     config = await configResponse.json();
     devices = await devicesResponse.json();
     applyStatus(await statusResponse.json());
+    refreshSystemUpdate();
   }
 
   function connectWs() {
@@ -225,8 +235,11 @@
 
   function applyStatus(data) {
     if (!data) return;
+    const systemUpdate = normalizeSystemUpdate(data.systemUpdate || status.systemUpdate);
     status = {
+      ...status,
       ...data,
+      systemUpdate,
       state: {
         ...(data.state || {}),
         faders: {
@@ -1192,17 +1205,27 @@
   }
 
   function systemUpdateLabel(update = status.systemUpdate || {}) {
+    if (!update || (!update.state && update.githubReachable === null && !update.checkedAt)) return 'nicht geprüft';
     if (update.running) return 'läuft';
     if (update.checking) return 'prüft';
     if (update.githubReachable === false) return 'GitHub offline';
     if (update.updateAvailable) return `${update.behind || 1} Update${Number(update.behind || 1) === 1 ? '' : 's'}`;
     if (update.githubReachable === true) return 'aktuell';
-    return update.state || 'unbekannt';
+    if (update.state === 'idle') return 'nicht geprüft';
+    return update.state || 'nicht geprüft';
+  }
+
+  function normalizeSystemUpdate(update) {
+    const next = { ...defaultSystemUpdate, ...(update || {}) };
+    next.running = next.running === true || next.state === 'running' || next.state === 'restarting';
+    next.checking = next.checking === true || next.state === 'checking';
+    next.behind = Math.max(0, Number(next.behind || 0));
+    next.updateAvailable = next.updateAvailable === true || next.behind > 0;
+    return next;
   }
 
   function applySystemUpdate(update) {
-    if (!update) return;
-    status = { ...status, systemUpdate: update };
+    status = { ...status, systemUpdate: normalizeSystemUpdate(update) };
     bumpView();
   }
 
