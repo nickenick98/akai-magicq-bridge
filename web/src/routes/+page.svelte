@@ -1086,26 +1086,41 @@
     bumpView();
   }
 
-  async function saveNetwork() {
-    config.network.backup.enabled = true;
-    config.network.backup.applyOnStart = true;
-    config.network.backup.address = normalizeBackupAddress(config.network.backup.address);
-    const response = await api('/api/network', { method: 'POST', body: config.network });
+  function prepareNetworkDraft() {
+    const network = {
+      ...(config.network || {}),
+      backup: {
+        ...(config.network?.backup || {}),
+        enabled: true,
+        applyOnStart: true,
+        address: normalizeBackupAddress(config.network?.backup?.address)
+      },
+      main: {
+        ...(config.network?.main || {})
+      }
+    };
+    config = { ...config, network };
+    return network;
+  }
+
+  async function saveAndApplyNetwork() {
+    const response = await api('/api/network/apply', { method: 'POST', body: prepareNetworkDraft() });
     const data = await response.json();
-    status = { ...status, network: data };
-    notice = 'Netzwerk gespeichert.';
+    config = data.network?.config ? { ...config, network: data.network.config } : config;
+    status = { ...status, network: data.network };
+    notice = data.ok ? 'Netzwerk gespeichert und angewendet.' : 'Netzwerk gespeichert. Backup-IP wurde versucht, Haupt-IP/DHCP hat Fehler gemeldet.';
+    error = data.error || '';
     bumpView();
   }
 
-  async function applyNetwork() {
-    config.network.backup.enabled = true;
-    config.network.backup.applyOnStart = true;
-    config.network.backup.address = normalizeBackupAddress(config.network.backup.address);
-    const response = await api('/api/network/apply', { method: 'POST', body: config.network });
-    const data = await response.json();
-    status = { ...status, network: data.network };
-    notice = data.ok ? 'Netzwerk auf Raspberry angewendet.' : 'Backup-IP wurde versucht, Haupt-IP/DHCP hat Fehler gemeldet.';
-    error = data.error || '';
+  async function cancelNetworkChanges() {
+    const [configResponse, statusResponse] = await Promise.all([api('/api/config'), api('/api/status')]);
+    const savedConfig = await configResponse.json();
+    const nextStatus = await statusResponse.json();
+    config = { ...config, network: savedConfig.network };
+    applyStatus(nextStatus);
+    notice = 'Nicht gespeicherte Netzwerkänderungen verworfen.';
+    error = '';
     bumpView();
   }
 
@@ -1503,8 +1518,8 @@
       <div class="section-head">
         <h2>Raspberry Netzwerk</h2>
         <div class="actions">
-          <button on:click={saveNetwork}>Netzwerk speichern</button>
-          <button class="secondary" on:click={applyNetwork}>Auf Raspberry anwenden</button>
+          <button on:click={saveAndApplyNetwork}>Speichern & anwenden</button>
+          <button class="secondary" on:click={cancelNetworkChanges}>Abbruch</button>
         </div>
       </div>
       <div class="status-row network-status">
