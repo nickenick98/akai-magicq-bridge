@@ -33,6 +33,7 @@ let systemUpdateRunning = false;
 let systemUpdateCheckRunning = false;
 const SERVER_STARTED_AT = new Date().toISOString();
 const SERVER_BOOT_ID = `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+const SYSTEM_UPDATE_GIT_TIMEOUT_MS = Number(process.env.AKAI_MAGICQ_UPDATE_GIT_TIMEOUT_MS || 15000);
 const SYSTEM_UPDATE_STATUS_PATH = path.join(DATA_DIR, 'system-update.json');
 const SYSTEM_UPDATE_LOG_PATH = path.join(DATA_DIR, 'system-update.log');
 
@@ -1269,15 +1270,20 @@ async function runSystemUpdate() {
 function runSystemUpdateCommand(label, bin, args) {
   appendSystemUpdateLog(`\n### ${label}: ${bin} ${args.join(' ')}`);
   return new Promise((resolve, reject) => {
+    let finished = false;
     const child = spawn(bin, args, {
       cwd: path.join(__dirname, '..'),
-      windowsHide: true
+      windowsHide: true,
+      env: updateCommandEnv(bin)
     });
+    const timeout = updateCommandTimeout(bin, label, child, reject, () => finished);
 
     child.stdout.on('data', (data) => appendSystemUpdateLog(data.toString()));
     child.stderr.on('data', (data) => appendSystemUpdateLog(data.toString()));
     child.on('error', reject);
     child.on('close', (code) => {
+      finished = true;
+      if (timeout) clearTimeout(timeout);
       appendSystemUpdateLog(`### ${label} beendet mit Code ${code}`);
       if (code === 0) resolve();
       else reject(new Error(`${label} fehlgeschlagen mit Code ${code}`));
@@ -1303,10 +1309,13 @@ async function checkGitUpdateAvailable() {
 function runSystemUpdateCommandCapture(label, bin, args) {
   appendSystemUpdateLog(`\n### ${label}: ${bin} ${args.join(' ')}`);
   return new Promise((resolve, reject) => {
+    let finished = false;
     const child = spawn(bin, args, {
       cwd: path.join(__dirname, '..'),
-      windowsHide: true
+      windowsHide: true,
+      env: updateCommandEnv(bin)
     });
+    const timeout = updateCommandTimeout(bin, label, child, reject, () => finished);
     let stdout = '';
     let stderr = '';
 
@@ -1322,11 +1331,33 @@ function runSystemUpdateCommandCapture(label, bin, args) {
     });
     child.on('error', reject);
     child.on('close', (code) => {
+      finished = true;
+      if (timeout) clearTimeout(timeout);
       appendSystemUpdateLog(`### ${label} beendet mit Code ${code}`);
       if (code === 0) resolve(stdout);
       else reject(new Error(`${label} fehlgeschlagen mit Code ${code}: ${stderr || stdout}`));
     });
   });
+}
+
+function updateCommandEnv(bin) {
+  if (bin !== 'git') return process.env;
+  return {
+    ...process.env,
+    GIT_TERMINAL_PROMPT: '0',
+    GIT_ASKPASS: 'echo'
+  };
+}
+
+function updateCommandTimeout(bin, label, child, reject, isFinished) {
+  if (bin !== 'git' || !SYSTEM_UPDATE_GIT_TIMEOUT_MS) return null;
+  return setTimeout(() => {
+    if (isFinished()) return;
+    const message = `${label} nach ${SYSTEM_UPDATE_GIT_TIMEOUT_MS}ms abgebrochen.`;
+    appendSystemUpdateLog(message);
+    child.kill('SIGTERM');
+    reject(new Error(message));
+  }, SYSTEM_UPDATE_GIT_TIMEOUT_MS);
 }
 
 function restartServiceCommand() {
