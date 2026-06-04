@@ -118,6 +118,8 @@
   let systemUpdateTimer = null;
   let systemUpdatePollUntil = 0;
   let ledClock = Date.now();
+  let serverBootId = '';
+  let serverReloadScheduled = false;
 
   let activeLayer = 'normal';
   let previewState = 'live';
@@ -241,6 +243,7 @@
 
   function applyStatus(data) {
     if (!data) return;
+    checkServerRestart(data);
     if (data.systemUpdate) applySystemUpdate(data.systemUpdate);
     status = {
       ...status,
@@ -406,6 +409,21 @@
         }
       }
     };
+  }
+
+  function checkServerRestart(data) {
+    const nextBootId = data.server?.bootId || data.server?.startedAt;
+    if (!nextBootId) return;
+    if (!serverBootId) {
+      serverBootId = nextBootId;
+      return;
+    }
+    if (nextBootId === serverBootId || serverReloadScheduled) return;
+    serverReloadScheduled = true;
+    notice = 'Service wurde neu gestartet. Browser wird neu geladen...';
+    setTimeout(() => {
+      location.reload();
+    }, 600);
   }
 
   function noteSourceType(note) {

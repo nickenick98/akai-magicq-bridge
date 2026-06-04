@@ -31,6 +31,8 @@ let lastNetworkBackupApply = null;
 let lastOscResync = null;
 let systemUpdateRunning = false;
 let systemUpdateCheckRunning = false;
+const SERVER_STARTED_AT = new Date().toISOString();
+const SERVER_BOOT_ID = `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 const SYSTEM_UPDATE_STATUS_PATH = path.join(DATA_DIR, 'system-update.json');
 const SYSTEM_UPDATE_LOG_PATH = path.join(DATA_DIR, 'system-update.log');
 
@@ -87,6 +89,10 @@ function reportError(error, source = 'server') {
 
 function status() {
   return {
+    server: {
+      startedAt: SERVER_STARTED_AT,
+      bootId: SERVER_BOOT_ID
+    },
     midi: midi.getStatus(),
     osc: osc.getStatus(),
     network: {
