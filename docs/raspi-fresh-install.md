@@ -189,6 +189,19 @@ Wenn du Ethernet-only faehrst und WLAN sicher nicht brauchst:
 DISABLE_WIFI=1 ./scripts/optimize-raspi.sh
 ```
 
+Das schaltet nur den WLAN-Radio ueber NetworkManager aus. Wenn du WLAN wirklich dauerhaft per Boot-Overlay deaktivieren willst, nur bei sicherem Ethernet-Betrieb:
+
+```bash
+DISABLE_WIFI=1 PERMANENT_DISABLE_WIFI=1 ./scripts/optimize-raspi.sh
+```
+
+Wenn der Pi danach nur noch ueber die Backup-IP erreichbar ist oder WLAN nicht mehr kommt:
+
+```bash
+./scripts/optimize-raspi.sh --restore-network
+sudo reboot
+```
+
 Wenn du maximale Appliance-Startzeit willst und automatische apt-Laeufe nicht brauchst:
 
 ```bash

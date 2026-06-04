@@ -5,11 +5,17 @@ SERVICE_NAME="${SERVICE_NAME:-akai-magicq-bridge}"
 FAST_SERVICE="${FAST_SERVICE:-1}"
 DISABLE_BLUETOOTH="${DISABLE_BLUETOOTH:-1}"
 DISABLE_WIFI="${DISABLE_WIFI:-0}"
+PERMANENT_DISABLE_WIFI="${PERMANENT_DISABLE_WIFI:-0}"
 DISABLE_AVAHI="${DISABLE_AVAHI:-1}"
 DISABLE_TRIGGERHAPPY="${DISABLE_TRIGGERHAPPY:-1}"
 DISABLE_MODEM="${DISABLE_MODEM:-1}"
 DISABLE_APT_TIMERS="${DISABLE_APT_TIMERS:-0}"
 LIMIT_JOURNAL="${LIMIT_JOURNAL:-1}"
+RESTORE_NETWORK="${RESTORE_NETWORK:-0}"
+
+if [[ "${1:-}" == "--restore-network" ]]; then
+  RESTORE_NETWORK=1
+fi
 
 if [[ "$(uname -s)" != "Linux" ]]; then
   echo "This script is intended for Raspberry Pi OS/Linux." >&2
@@ -67,6 +73,44 @@ append_boot_overlay() {
   fi
 }
 
+remove_boot_overlay() {
+  local overlay="$1"
+  local config_path
+  config_path="$(boot_config_path)"
+  if [[ -z "$config_path" ]]; then
+    echo "Boot config not found; cannot remove $overlay." >&2
+    return
+  fi
+
+  if grep -Eq "^[[:space:]]*${overlay}([[:space:]]|$)" "$config_path"; then
+    echo "Removing $overlay from $config_path..."
+    "${SUDO[@]}" sed -i.bak "/^[[:space:]]*${overlay//\//\\/}\\([[:space:]]\\|$\\)/d" "$config_path"
+  fi
+}
+
+restore_network() {
+  echo "Restoring network-safe defaults..."
+  remove_boot_overlay "dtoverlay=disable-wifi"
+
+  if unit_exists NetworkManager.service; then
+    "${SUDO[@]}" systemctl unmask NetworkManager.service >/dev/null 2>&1 || true
+    "${SUDO[@]}" systemctl enable --now NetworkManager.service >/dev/null 2>&1 || true
+  fi
+
+  if command -v nmcli >/dev/null 2>&1; then
+    "${SUDO[@]}" nmcli networking on >/dev/null 2>&1 || true
+    "${SUDO[@]}" nmcli radio wifi on >/dev/null 2>&1 || true
+  fi
+
+  echo "Network restore done. Reboot is recommended if a boot overlay was removed:"
+  echo "  sudo reboot"
+}
+
+if [[ "$RESTORE_NETWORK" == "1" ]]; then
+  restore_network
+  exit 0
+fi
+
 echo "Setting default target to multi-user..."
 "${SUDO[@]}" systemctl set-default multi-user.target >/dev/null
 
@@ -90,10 +134,21 @@ if [[ "$DISABLE_BLUETOOTH" == "1" ]]; then
 fi
 
 if [[ "$DISABLE_WIFI" == "1" ]]; then
-  echo "Disabling Wi-Fi..."
-  append_boot_overlay "dtoverlay=disable-wifi"
+  echo "Disabling Wi-Fi radio..."
   if command -v nmcli >/dev/null 2>&1; then
     "${SUDO[@]}" nmcli radio wifi off >/dev/null 2>&1 || true
+  fi
+  if [[ "$PERMANENT_DISABLE_WIFI" == "1" ]]; then
+    echo "Permanently disabling Wi-Fi through boot overlay..."
+    append_boot_overlay "dtoverlay=disable-wifi"
+  else
+    echo "Wi-Fi boot overlay is left untouched. Use PERMANENT_DISABLE_WIFI=1 only for Ethernet-only appliances."
+  fi
+else
+  remove_boot_overlay "dtoverlay=disable-wifi"
+  if command -v nmcli >/dev/null 2>&1; then
+    "${SUDO[@]}" nmcli networking on >/dev/null 2>&1 || true
+    "${SUDO[@]}" nmcli radio wifi on >/dev/null 2>&1 || true
   fi
 fi
 
