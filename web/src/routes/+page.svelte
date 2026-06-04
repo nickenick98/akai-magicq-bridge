@@ -1116,15 +1116,18 @@
         ...(config.apc || {}),
         shiftBehavior: {
           switchPage: true,
-          guardInternalCombos: true,
+          guardInternalCombos: false,
           blockedShiftSources: ['scene', 'fader', 'cc', 'note'],
           recoverOnRelease: true,
-          sendIntroductionOnConnect: true,
-          sendIntroductionOnRecovery: true,
+          sendIntroductionOnConnect: false,
+          sendIntroductionOnRecovery: false,
           sceneButtonsBlockedOnShift: true,
           recoverDelaysMs: [0, 80, 250, 800],
           ...(config.apc?.shiftBehavior || {}),
-          [key]: value
+          [key]: value,
+          guardInternalCombos: false,
+          sendIntroductionOnConnect: false,
+          sendIntroductionOnRecovery: false
         }
       }
     };
@@ -1309,30 +1312,6 @@
             on:change={(event) => setApcShiftBehavior('switchPage', event.currentTarget.checked)}
           />
           <span>Shift schaltet Seite 2</span>
-        </label>
-        <label class="checkbox-row">
-          <input
-            type="checkbox"
-            checked={config.apc?.shiftBehavior?.guardInternalCombos !== false}
-            on:change={(event) => setApcShiftBehavior('guardInternalCombos', event.currentTarget.checked)}
-          />
-          <span>AKAI Shift-Kombis blocken</span>
-        </label>
-        <label class="checkbox-row">
-          <input
-            type="checkbox"
-            checked={config.apc?.shiftBehavior?.sendIntroductionOnConnect !== false}
-            on:change={(event) => setApcShiftBehavior('sendIntroductionOnConnect', event.currentTarget.checked)}
-          />
-          <span>APC Host-Modus beim Verbinden setzen</span>
-        </label>
-        <label class="checkbox-row">
-          <input
-            type="checkbox"
-            checked={config.apc?.shiftBehavior?.sendIntroductionOnRecovery !== false}
-            on:change={(event) => setApcShiftBehavior('sendIntroductionOnRecovery', event.currentTarget.checked)}
-          />
-          <span>APC Host-Modus nach Shift reparieren</span>
         </label>
         <label class="checkbox-row">
           <input

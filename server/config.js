@@ -13,11 +13,11 @@ const APC_DEFAULTS = {
   faderCcs: Array.from({ length: 9 }, (_, index) => 48 + index),
   shiftBehavior: {
     switchPage: true,
-    guardInternalCombos: true,
+    guardInternalCombos: false,
     blockedShiftSources: ['scene', 'fader', 'cc', 'note'],
     recoverOnRelease: true,
-    sendIntroductionOnConnect: true,
-    sendIntroductionOnRecovery: true,
+    sendIntroductionOnConnect: false,
+    sendIntroductionOnRecovery: false,
     sceneButtonsBlockedOnShift: true,
     recoverDelaysMs: [0, 80, 250, 800]
   }
@@ -245,6 +245,9 @@ function normalizeConfig(config) {
     ...APC_DEFAULTS.shiftBehavior,
     ...(next.apc.shiftBehavior || {})
   };
+  next.apc.shiftBehavior.guardInternalCombos = false;
+  next.apc.shiftBehavior.sendIntroductionOnConnect = false;
+  next.apc.shiftBehavior.sendIntroductionOnRecovery = false;
   next.feedback = {
     localStateUpdates: true,
     oscResyncEnabled: false,

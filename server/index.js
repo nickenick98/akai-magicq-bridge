@@ -791,17 +791,21 @@ function rememberMidiWatch(message, details = {}) {
 }
 
 function shiftBehavior() {
-  return {
+  const behavior = {
     switchPage: true,
-    guardInternalCombos: true,
+    guardInternalCombos: false,
     blockedShiftSources: ['scene', 'fader', 'cc', 'note'],
     recoverOnRelease: true,
-    sendIntroductionOnConnect: true,
-    sendIntroductionOnRecovery: true,
+    sendIntroductionOnConnect: false,
+    sendIntroductionOnRecovery: false,
     sceneButtonsBlockedOnShift: true,
     recoverDelaysMs: [0, 80, 250, 800],
     ...(config.apc?.shiftBehavior || {})
   };
+  behavior.guardInternalCombos = false;
+  behavior.sendIntroductionOnConnect = false;
+  behavior.sendIntroductionOnRecovery = false;
+  return behavior;
 }
 
 function shiftSwitchesPage() {
