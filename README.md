@@ -107,6 +107,7 @@ sudo reboot
 
 Das Optimierungs-Skript schaltet standardmaessig Bluetooth, Avahi, Triggerhappy, ModemManager und `NetworkManager-wait-online` ab und startet den Bridge-Service schon nach `network.target`.
 WLAN bleibt unveraendert, ausser `DISABLE_WIFI=1` wird explizit gesetzt. Falls ein Pi nach Optimierungen nur noch ueber die Backup-IP erreichbar ist, setzt `./scripts/optimize-raspi.sh --restore-network` `eth0` wieder auf DHCP/Autoconnect. WLAN bleibt dabei aus/unveraendert.
+Mit `./scripts/optimize-raspi.sh --restore-all` werden die Optimierungen wieder zurueckgesetzt; mit `KEEP_WIFI_DISABLED=1` bleibt WLAN dabei ausgeschaltet.
 
 Raspberry Pi OS Bookworm nutzt standardmaessig NetworkManager. Die Bridge erwartet Node.js 20 oder neuer.
 

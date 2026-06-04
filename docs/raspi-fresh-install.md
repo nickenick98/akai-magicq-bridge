@@ -215,6 +215,20 @@ RESTORE_WIFI=1 ./scripts/optimize-raspi.sh --restore-network
 sudo reboot
 ```
 
+Wenn alle Optimierungen wieder zurueckgesetzt werden sollen:
+
+```bash
+./scripts/optimize-raspi.sh --restore-all
+sudo reboot
+```
+
+Das entfernt die systemd-Beschleunigung, hebt Journald-Limits auf, entfernt `disable-bt`/`disable-wifi` Boot-Overlays und aktiviert die abgeschalteten Dienste wieder. Wenn WLAN aus bleiben soll:
+
+```bash
+KEEP_WIFI_DISABLED=1 ./scripts/optimize-raspi.sh --restore-all
+sudo reboot
+```
+
 Wenn du maximale Appliance-Startzeit willst und automatische apt-Laeufe nicht brauchst:
 
 ```bash

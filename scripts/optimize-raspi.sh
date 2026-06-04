@@ -3,6 +3,8 @@ set -euo pipefail
 
 SERVICE_NAME="${SERVICE_NAME:-akai-magicq-bridge}"
 ETH_INTERFACE="${ETH_INTERFACE:-eth0}"
+OPTIMIZE_STATE_DIR="${OPTIMIZE_STATE_DIR:-/var/lib/akai-magicq-bridge}"
+OPTIMIZE_STATE_FILE="${OPTIMIZE_STATE_FILE:-$OPTIMIZE_STATE_DIR/optimize-state.env}"
 FAST_SERVICE="${FAST_SERVICE:-1}"
 DISABLE_BLUETOOTH="${DISABLE_BLUETOOTH:-1}"
 DISABLE_WIFI="${DISABLE_WIFI:-0}"
@@ -13,11 +15,18 @@ DISABLE_MODEM="${DISABLE_MODEM:-1}"
 DISABLE_APT_TIMERS="${DISABLE_APT_TIMERS:-0}"
 LIMIT_JOURNAL="${LIMIT_JOURNAL:-1}"
 RESTORE_NETWORK="${RESTORE_NETWORK:-0}"
+RESTORE_ALL="${RESTORE_ALL:-0}"
 RESTORE_ETH_DHCP="${RESTORE_ETH_DHCP:-1}"
 RESTORE_WIFI="${RESTORE_WIFI:-0}"
+KEEP_WIFI_DISABLED="${KEEP_WIFI_DISABLED:-0}"
+RESTORE_DEFAULT_TARGET="${RESTORE_DEFAULT_TARGET:-}"
 
 if [[ "${1:-}" == "--restore-network" ]]; then
   RESTORE_NETWORK=1
+fi
+
+if [[ "${1:-}" == "--restore-all" ]]; then
+  RESTORE_ALL=1
 fi
 
 if [[ "$(uname -s)" != "Linux" ]]; then
@@ -51,6 +60,24 @@ mask_unit() {
   fi
 }
 
+enable_unit() {
+  local unit="$1"
+  if unit_exists "$unit"; then
+    echo "Enabling $unit..."
+    "${SUDO[@]}" systemctl unmask "$unit" >/dev/null 2>&1 || true
+    "${SUDO[@]}" systemctl enable --now "$unit" >/dev/null 2>&1 || true
+  fi
+}
+
+enable_timer() {
+  local unit="$1"
+  if unit_exists "$unit"; then
+    echo "Enabling $unit..."
+    "${SUDO[@]}" systemctl unmask "$unit" >/dev/null 2>&1 || true
+    "${SUDO[@]}" systemctl enable --now "$unit" >/dev/null 2>&1 || true
+  fi
+}
+
 boot_config_path() {
   if [[ -f /boot/firmware/config.txt ]]; then
     echo /boot/firmware/config.txt
@@ -58,6 +85,28 @@ boot_config_path() {
     echo /boot/config.txt
   else
     echo ""
+  fi
+}
+
+save_optimizer_state() {
+  if [[ -f "$OPTIMIZE_STATE_FILE" ]]; then
+    return
+  fi
+
+  local default_target
+  default_target="$(systemctl get-default 2>/dev/null || true)"
+  "${SUDO[@]}" mkdir -p "$OPTIMIZE_STATE_DIR"
+  {
+    printf 'DEFAULT_TARGET=%q\n' "${default_target:-multi-user.target}"
+    printf 'SAVED_AT=%q\n' "$(date -Is)"
+  } | "${SUDO[@]}" tee "$OPTIMIZE_STATE_FILE" >/dev/null
+}
+
+saved_default_target() {
+  if [[ -f "$OPTIMIZE_STATE_FILE" ]]; then
+    # shellcheck disable=SC1090
+    source "$OPTIMIZE_STATE_FILE"
+    echo "${DEFAULT_TARGET:-}"
   fi
 }
 
@@ -136,10 +185,69 @@ restore_network() {
   echo "  sudo reboot"
 }
 
+restore_all() {
+  echo "Restoring Raspberry Pi defaults changed by this optimization script..."
+  restore_network
+
+  service_dir="/etc/systemd/system/${SERVICE_NAME}.service.d"
+  if [[ -f "$service_dir/10-fast-boot.conf" ]]; then
+    echo "Removing fast boot override for $SERVICE_NAME..."
+    "${SUDO[@]}" rm -f "$service_dir/10-fast-boot.conf"
+    "${SUDO[@]}" rmdir "$service_dir" >/dev/null 2>&1 || true
+  fi
+
+  if [[ -f /etc/systemd/journald.conf.d/akai-bridge.conf ]]; then
+    echo "Removing journald limit..."
+    "${SUDO[@]}" rm -f /etc/systemd/journald.conf.d/akai-bridge.conf
+  fi
+
+  remove_boot_overlay "dtoverlay=disable-bt"
+  if [[ "$KEEP_WIFI_DISABLED" != "1" ]]; then
+    remove_boot_overlay "dtoverlay=disable-wifi"
+    if command -v nmcli >/dev/null 2>&1; then
+      "${SUDO[@]}" nmcli radio wifi on >/dev/null 2>&1 || true
+    fi
+  fi
+
+  enable_unit NetworkManager-wait-online.service
+  enable_unit bluetooth.service
+  enable_unit hciuart.service
+  enable_unit avahi-daemon.service
+  enable_unit avahi-daemon.socket
+  enable_unit triggerhappy.service
+  enable_unit ModemManager.service
+  enable_timer apt-daily.timer
+  enable_timer apt-daily-upgrade.timer
+  "${SUDO[@]}" systemctl unmask apt-daily.service >/dev/null 2>&1 || true
+  "${SUDO[@]}" systemctl unmask apt-daily-upgrade.service >/dev/null 2>&1 || true
+
+  local target
+  target="${RESTORE_DEFAULT_TARGET:-$(saved_default_target)}"
+  if [[ -n "$target" ]]; then
+    echo "Restoring default target to $target..."
+    "${SUDO[@]}" systemctl set-default "$target" >/dev/null 2>&1 || true
+  else
+    echo "No saved default target found; leaving current default target unchanged."
+  fi
+
+  "${SUDO[@]}" systemctl daemon-reload
+
+  echo
+  echo "Full restore done. Reboot recommended:"
+  echo "  sudo reboot"
+}
+
 if [[ "$RESTORE_NETWORK" == "1" ]]; then
   restore_network
   exit 0
 fi
+
+if [[ "$RESTORE_ALL" == "1" ]]; then
+  restore_all
+  exit 0
+fi
+
+save_optimizer_state
 
 echo "Setting default target to multi-user..."
 "${SUDO[@]}" systemctl set-default multi-user.target >/dev/null
