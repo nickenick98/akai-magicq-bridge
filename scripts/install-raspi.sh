@@ -51,7 +51,7 @@ else
 fi
 npm run build
 
-echo "Installing sudoers entry for network management..."
+echo "Installing sudoers entry for network and service management..."
 sudo sed "s/^akai /$APP_USER /" systemd/akai-magicq-bridge-sudoers | sudo tee "/etc/sudoers.d/$SERVICE_NAME" >/dev/null
 sudo chmod 440 "/etc/sudoers.d/$SERVICE_NAME"
 sudo visudo -cf "/etc/sudoers.d/$SERVICE_NAME"

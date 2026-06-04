@@ -150,13 +150,15 @@ npm start
 
 Mit `npm start` laeuft die Oberflaeche weiter auf `http://<raspi-ip>:3001`.
 
-6. Netzwerkrechte fuer Backup-IP und Haupt-IP erlauben:
+6. Netzwerkrechte fuer Backup-IP/Haupt-IP und den GUI-Service-Neustart erlauben:
 
 ```bash
 sudo cp systemd/akai-magicq-bridge-sudoers /etc/sudoers.d/akai-magicq-bridge
 sudo chmod 440 /etc/sudoers.d/akai-magicq-bridge
 sudo visudo -cf /etc/sudoers.d/akai-magicq-bridge
 ```
+
+Die sudoers-Regel erlaubt dem Bridge-Benutzer nur `nmcli`, `ip` und den Neustart von `akai-magicq-bridge.service`, damit der Update-Button nach Pull und Build den eigenen Service neu starten kann.
 
 7. systemd-Service aktivieren:
 

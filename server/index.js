@@ -1320,7 +1320,7 @@ function runSystemUpdateCommandCapture(label, bin, args) {
 }
 
 function restartServiceCommand() {
-  const service = systemServiceName();
+  const service = systemServiceUnitName();
   if (process.getuid && process.getuid() === 0) {
     return { bin: 'systemctl', args: ['--no-block', 'restart', service] };
   }
@@ -1329,6 +1329,11 @@ function restartServiceCommand() {
 
 function systemServiceName() {
   return process.env.AKAI_MAGICQ_SERVICE || config.server?.serviceName || 'akai-magicq-bridge';
+}
+
+function systemServiceUnitName() {
+  const service = systemServiceName();
+  return service.endsWith('.service') ? service : `${service}.service`;
 }
 
 function readSystemUpdateStatus() {

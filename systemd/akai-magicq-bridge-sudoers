@@ -1,1 +1,1 @@
-akai ALL=(root) NOPASSWD: /usr/bin/nmcli, /usr/sbin/ip, /usr/bin/ip, /sbin/ip
+akai ALL=(root) NOPASSWD: /usr/bin/nmcli, /usr/sbin/ip, /usr/bin/ip, /sbin/ip, /usr/bin/systemctl --no-block restart akai-magicq-bridge.service, /bin/systemctl --no-block restart akai-magicq-bridge.service
