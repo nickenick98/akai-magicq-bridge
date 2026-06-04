@@ -108,7 +108,8 @@
     behind: 0
   };
 
-  let status = { systemUpdate: defaultSystemUpdate };
+  let status = {};
+  let systemUpdate = defaultSystemUpdate;
   let recent = { midi: [], oscSent: [], oscReceived: [], errors: [] };
   let ws = null;
   let wsState = 'offline';
@@ -177,15 +178,16 @@
   });
 
   async function loadInitial() {
-    const [configResponse, devicesResponse, statusResponse] = await Promise.all([
+    const [configResponse, devicesResponse, statusResponse, updateResponse] = await Promise.all([
       fetch('/api/config'),
       fetch('/api/midi/devices'),
-      fetch('/api/status')
+      fetch('/api/status'),
+      fetch('/api/system/update', { cache: 'no-store' })
     ]);
     config = await configResponse.json();
     devices = await devicesResponse.json();
     applyStatus(await statusResponse.json());
-    refreshSystemUpdate();
+    if (updateResponse.ok) applySystemUpdate(await updateResponse.json());
   }
 
   function connectWs() {
@@ -235,11 +237,10 @@
 
   function applyStatus(data) {
     if (!data) return;
-    const systemUpdate = normalizeSystemUpdate(data.systemUpdate || status.systemUpdate);
+    if (data.systemUpdate) applySystemUpdate(data.systemUpdate);
     status = {
       ...status,
       ...data,
-      systemUpdate,
       state: {
         ...(data.state || {}),
         faders: {
@@ -1197,14 +1198,14 @@
   }
 
   function canCheckSystemUpdate() {
-    return status.network?.platform === 'linux' && !status.systemUpdate?.running && !status.systemUpdate?.checking;
+    return status.network?.platform === 'linux' && !systemUpdate?.running && !systemUpdate?.checking;
   }
 
   function canRunSystemUpdate() {
-    return canCheckSystemUpdate() && status.systemUpdate?.githubReachable === true && status.systemUpdate?.updateAvailable === true;
+    return canCheckSystemUpdate() && systemUpdate?.githubReachable === true && systemUpdate?.updateAvailable === true;
   }
 
-  function systemUpdateLabel(update = status.systemUpdate || {}) {
+  function systemUpdateLabel(update = systemUpdate || {}) {
     if (!update || (!update.state && update.githubReachable === null && !update.checkedAt)) return 'nicht geprüft';
     if (update.running) return 'läuft';
     if (update.checking) return 'prüft';
@@ -1225,11 +1226,11 @@
   }
 
   function applySystemUpdate(update) {
-    status = { ...status, systemUpdate: normalizeSystemUpdate(update) };
+    systemUpdate = normalizeSystemUpdate(update);
     bumpView();
   }
 
-  function systemUpdateInProgress(update = status.systemUpdate || {}) {
+  function systemUpdateInProgress(update = systemUpdate || {}) {
     return Boolean(update.running || update.checking || update.state === 'running' || update.state === 'checking' || update.state === 'restarting');
   }
 
@@ -1330,7 +1331,7 @@
       <span class:ok={status.midi?.outputConnected} class="pill">MIDI Out {status.midi?.outputConnected ? 'ok' : 'off'}</span>
       <span class:ok={status.osc?.ready} class="pill">OSC {status.osc?.ready ? 'ready' : 'off'}</span>
       <span class:ok={status.oscResync?.enabled} class="pill">Resync {status.oscResync?.enabled ? `${Math.round((status.oscResync?.intervalMs || 0) / 1000)}s` : 'aus'}</span>
-      <span class:ok={status.systemUpdate?.updateAvailable} class="pill">Update {systemUpdateLabel()}</span>
+      <span class:ok={systemUpdate?.updateAvailable || systemUpdate?.githubReachable === true} class="pill">Update {systemUpdateLabel()}</span>
     </div>
   </header>
 
@@ -1404,11 +1405,11 @@
       {#if status.network?.platform === 'linux'}
         <p class="hint">
           Update: {systemUpdateLabel()}
-          {#if status.systemUpdate?.checkedAt}
-            - zuletzt geprüft {new Date(status.systemUpdate.checkedAt).toLocaleTimeString()}
+          {#if systemUpdate?.checkedAt}
+            - zuletzt geprüft {new Date(systemUpdate.checkedAt).toLocaleTimeString()}
           {/if}
-          {#if status.systemUpdate?.error}
-            - {status.systemUpdate.error}
+          {#if systemUpdate?.error}
+            - {systemUpdate.error}
           {/if}
         </p>
       {/if}
