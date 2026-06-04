@@ -822,7 +822,7 @@
   }
 
   function ledTitle(type) {
-    if (type === 'scene') return 'Scene LEDs sind beim APC fest gruen: nur aus, an oder blink.';
+    if (type === 'scene') return 'Scene LEDs sind beim APC fest grün: nur aus, an oder blink.';
     if (type === 'control') return 'Control LEDs sind beim APC fest rot: nur aus, an oder blink.';
     if (type === 'shift') return 'Shift hat keine frei steuerbare RGB LED.';
     return '';
@@ -933,7 +933,7 @@
     }
 
     if (!changed.length) {
-      notice = 'Keine passenden Elemente fuer diese Mehrfachauswahl.';
+      notice = 'Keine passenden Elemente für diese Mehrfachauswahl.';
       return;
     }
 
@@ -991,7 +991,7 @@
 
   function quickMapDestinationLabel(item, index) {
     const target = quickMapTargetFor(item, index);
-    if (!target) return 'nicht moeglich';
+    if (!target) return 'nicht möglich';
     if (target.type === 'disabled') return 'Aus';
     if (target.type === 'magicq-executor-fader') return `Fader ${target.page}/${target.executor}`;
     if (target.action === 'set-level') return `Button ${target.page}/${target.executor} ${target.value}%`;
@@ -1179,7 +1179,7 @@
     const response = await api('/api/osc/resync', { method: 'POST' });
     const result = await response.json();
     status = { ...status, oscResync: result };
-    notice = result.skipped ? `OSC Resync uebersprungen: ${result.skipReason || result.reason}` : `OSC Resync gesendet: ${result.sent || 0}`;
+    notice = result.skipped ? `OSC Resync übersprungen: ${result.skipReason || result.reason}` : `OSC Resync gesendet: ${result.sent || 0}`;
     bumpView();
   }
 
@@ -1192,8 +1192,8 @@
   }
 
   function systemUpdateLabel(update = status.systemUpdate || {}) {
-    if (update.running) return 'laeuft';
-    if (update.checking) return 'prueft';
+    if (update.running) return 'läuft';
+    if (update.checking) return 'prüft';
     if (update.githubReachable === false) return 'GitHub offline';
     if (update.updateAvailable) return `${update.behind || 1} Update${Number(update.behind || 1) === 1 ? '' : 's'}`;
     if (update.githubReachable === true) return 'aktuell';
@@ -1242,9 +1242,9 @@
       const data = await response.json();
       applySystemUpdate(data.update);
       startSystemUpdatePoll(45000);
-      if (!quiet) notice = `Update-Pruefung: ${systemUpdateLabel(data.update)}`;
+      if (!quiet) notice = `Update-Prüfung: ${systemUpdateLabel(data.update)}`;
     } catch (err) {
-      if (!quiet) error = `Update-Pruefung: ${err.message}`;
+      if (!quiet) error = `Update-Prüfung: ${err.message}`;
     }
   }
 
@@ -1320,7 +1320,7 @@
           <button class="secondary" on:click={reconnect}>Neu verbinden</button>
           <button class="secondary" on:click={resyncOscStates}>OSC Resync jetzt</button>
           {#if status.network?.platform === 'linux'}
-            <button class="secondary" disabled={!canCheckSystemUpdate()} on:click={() => checkSystemUpdate(false)}>Update pruefen</button>
+            <button class="secondary" disabled={!canCheckSystemUpdate()} on:click={() => checkSystemUpdate(false)}>Update prüfen</button>
             <button class="secondary" disabled={!canRunSystemUpdate()} on:click={runSystemUpdate}>Update installieren</button>
           {/if}
         </div>
@@ -1382,7 +1382,7 @@
         <p class="hint">
           Update: {systemUpdateLabel()}
           {#if status.systemUpdate?.checkedAt}
-            - zuletzt geprueft {new Date(status.systemUpdate.checkedAt).toLocaleTimeString()}
+            - zuletzt geprüft {new Date(status.systemUpdate.checkedAt).toLocaleTimeString()}
           {/if}
           {#if status.systemUpdate?.error}
             - {status.systemUpdate.error}
@@ -1402,7 +1402,7 @@
           </label>
         </div>
       </div>
-      <p class="hint">Exportiert Mapping und Einstellungen. Die lokale Backup-IP wird nicht ueberschrieben.</p>
+      <p class="hint">Exportiert Mapping und Einstellungen. Die lokale Backup-IP wird nicht überschrieben.</p>
     </section>
 
     {#if status.network?.platform === 'win32'}
@@ -1441,7 +1441,7 @@
         <span class="pill">Host {status.network?.hostname || '-'}</span>
       </div>
       <div class="fields network-fields">
-        <label><span>Schnittstelle fuer beide IPs</span><input bind:value={config.network.interface} placeholder="eth0" /></label>
+        <label><span>Schnittstelle für beide IPs</span><input bind:value={config.network.interface} placeholder="eth0" /></label>
         <label><span>Backup IP/CIDR immer aktiv</span><input bind:value={config.network.backup.address} required placeholder="192.168.50.10/24" on:blur={() => (config.network.backup.address = normalizeBackupAddress(config.network.backup.address))} /></label>
         <label><span>NM Connection optional</span><input bind:value={config.network.main.connection} placeholder="leer = automatisch" /></label>
         <label>
@@ -1537,7 +1537,7 @@
 
         {#if multiSelect}
           <div class="bulk-head">
-            <strong>{selection.length} ausgewaehlt</strong>
+            <strong>{selection.length} ausgewählt</strong>
             <div class="bulk-actions">
               <button class="secondary" on:click={() => (selection = [])}>Leeren</button>
               <button class="danger" on:click={cancelBulkEdit}>Abbruch</button>
@@ -1550,11 +1550,11 @@
             </label>
             <label class="checkbox-row">
               <input type="checkbox" bind:checked={bulkTargetEnabled} />
-              <span>Zieltyp mit aendern</span>
+              <span>Zieltyp mit ändern</span>
             </label>
             <label class="checkbox-row">
               <input type="checkbox" bind:checked={bulkActionEnabled} />
-              <span>Aktion/Modus aendern</span>
+              <span>Aktion/Modus ändern</span>
             </label>
             <label class="checkbox-row">
               <input type="checkbox" bind:checked={bulkLedEnabled} />
@@ -1597,7 +1597,7 @@
                 {/each}
               </div>
             {:else}
-              <p class="hint">Pads oder Buttons in der gewuenschten Reihenfolge anklicken.</p>
+              <p class="hint">Pads oder Buttons in der gewünschten Reihenfolge anklicken.</p>
             {/if}
             </div>
           {/if}
@@ -1696,7 +1696,7 @@
               <div class="quick-map-head">
                 <div>
                   <strong>Aktion/Modus</strong>
-                  <span>Aendert nur die Aktion der vorhandenen Mappings, Zieltyp, Page, Executor und LEDs bleiben gleich.</span>
+                  <span>Ändert nur die Aktion der vorhandenen Mappings, Zieltyp, Page, Executor und LEDs bleiben gleich.</span>
                 </div>
               </div>
               <div class="fields compact">
@@ -1717,7 +1717,7 @@
               <div class="quick-map-head">
                 <div>
                   <strong>Farbe/LED</strong>
-                  <span>Wird nur fuer Elemente mit LED angewendet, Fader bleiben unveraendert.</span>
+                  <span>Wird nur für Elemente mit LED angewendet, Fader bleiben unverändert.</span>
                 </div>
               </div>
               {@render LedControls(bulkLed, setBulkLed, 'pad')}
@@ -1835,7 +1835,7 @@
             <button on:click={saveMapping}>Mapping speichern</button>
           </div>
         {:else}
-          <p class="empty">Element auswaehlen oder Mehrfachauswahl aktivieren.</p>
+          <p class="empty">Element auswählen oder Mehrfachauswahl aktivieren.</p>
         {/if}
       </section>
     </div>
