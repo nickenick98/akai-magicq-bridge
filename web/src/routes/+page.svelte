@@ -148,6 +148,7 @@
   $: bulkApplyEnabled = selection.length > 0 && (bulkTargetEnabled || bulkLedEnabled || (quickMapEnabled && quickMapCanSave));
 
   onMount(async () => {
+    window.__akaiBridgeHideFallback?.();
     loadInitial();
     connectWs();
     pollTimer = setInterval(pollStatus, 5000);

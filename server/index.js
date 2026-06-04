@@ -546,10 +546,25 @@ server.on('connection', (socket) => {
 });
 
 const staticDir = path.join(__dirname, '..', 'web', 'build');
-app.use(express.static(staticDir));
+app.use(
+  express.static(staticDir, {
+    setHeaders: (res, filePath) => {
+      if (path.basename(filePath) === 'index.html') {
+        res.setHeader('Cache-Control', 'no-store');
+      }
+      if (filePath.includes(`${path.sep}_app${path.sep}immutable${path.sep}`)) {
+        res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+      }
+    }
+  })
+);
 app.get('*', (req, res, next) => {
   if (req.path.startsWith('/api')) return next();
+  if (req.path.startsWith('/_app/') || path.extname(req.path)) {
+    return res.status(404).send('Not found');
+  }
   try {
+    res.setHeader('Cache-Control', 'no-store');
     res.type('html').send(require('fs').readFileSync(path.join(staticDir, 'index.html'), 'utf8'));
   } catch (error) {
     next(error);
