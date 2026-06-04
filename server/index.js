@@ -892,7 +892,7 @@ function startOscStateResendTimer() {
 function oscStateResendSettings() {
   return {
     enabled: config.feedback?.resendStatesEnabled === true,
-    intervalMs: Math.max(1000, Number(config.feedback?.resendStatesIntervalMs || 5000))
+    intervalMs: Math.max(5000, Number(config.feedback?.resendStatesIntervalMs || 10000))
   };
 }
 
@@ -979,7 +979,9 @@ function resendStoredOscStates(reason = 'timer') {
     sent: sent.filter(Boolean).length,
     at: new Date().toISOString()
   };
-  broadcast('status', status());
+  if (reason === 'manual') {
+    broadcast('status', status());
+  }
   return lastOscStateResend;
 }
 

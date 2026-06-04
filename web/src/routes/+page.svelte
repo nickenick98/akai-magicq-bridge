@@ -150,10 +150,10 @@
   onMount(async () => {
     await loadInitial();
     connectWs();
-    pollTimer = setInterval(pollStatus, 500);
+    pollTimer = setInterval(pollStatus, 5000);
     ledClockTimer = setInterval(() => {
       ledClock = Date.now();
-    }, 40);
+    }, 80);
   });
 
   onDestroy(() => {
@@ -210,6 +210,7 @@
   }
 
   async function pollStatus() {
+    if (wsState === 'online') return;
     try {
       const response = await fetch('/api/status', { cache: 'no-store' });
       if (response.ok) applyStatus(await response.json());
@@ -1124,7 +1125,7 @@
   }
 
   function setResendIntervalSeconds(value) {
-    const seconds = Math.max(1, Number(value) || 5);
+    const seconds = Math.max(5, Number(value) || 5);
     setFeedbackOption('resendStatesIntervalMs', Math.round(seconds * 1000));
   }
 
@@ -1263,9 +1264,9 @@
           <span>State Resync alle Sekunden</span>
           <input
             type="number"
-            min="1"
+            min="5"
             step="1"
-            value={Math.round((config.feedback?.resendStatesIntervalMs || 5000) / 1000)}
+            value={Math.round((config.feedback?.resendStatesIntervalMs || 10000) / 1000)}
             on:input={(event) => setResendIntervalSeconds(event.currentTarget.value)}
           />
         </label>
