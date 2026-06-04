@@ -1216,6 +1216,14 @@
     return update.state || 'nicht geprüft';
   }
 
+  function systemUpdateWasChecked(update = systemUpdate || {}) {
+    return Boolean(update?.checkedAt || update?.running || update?.checking || update?.state === 'running' || update?.state === 'checking' || update?.state === 'restarting');
+  }
+
+  function systemUpdateOk(update = systemUpdate || {}) {
+    return systemUpdateWasChecked(update) && update?.githubReachable === true && (update?.updateAvailable === true || update?.state === 'up-to-date');
+  }
+
   function normalizeSystemUpdate(update) {
     const next = { ...defaultSystemUpdate, ...(update || {}) };
     next.running = next.running === true || next.state === 'running' || next.state === 'restarting';
@@ -1331,7 +1339,7 @@
       <span class:ok={status.midi?.outputConnected} class="pill">MIDI Out {status.midi?.outputConnected ? 'ok' : 'off'}</span>
       <span class:ok={status.osc?.ready} class="pill">OSC {status.osc?.ready ? 'ready' : 'off'}</span>
       <span class:ok={status.oscResync?.enabled} class="pill">Resync {status.oscResync?.enabled ? `${Math.round((status.oscResync?.intervalMs || 0) / 1000)}s` : 'aus'}</span>
-      <span class:ok={systemUpdate?.updateAvailable || systemUpdate?.githubReachable === true} class="pill">Update {systemUpdateLabel()}</span>
+      <span class:ok={systemUpdateOk()} class="pill">Update {systemUpdateLabel()}</span>
     </div>
   </header>
 
