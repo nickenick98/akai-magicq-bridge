@@ -38,7 +38,6 @@
     ['magicq-dbo', 'DBO'],
     ['magicq-swap', 'Swap'],
     ['magicq-rpc', 'RPC Command'],
-    ['special', 'Bridge Spezialfunktion'],
     ['shift-hold', 'Shift Hold'],
     ['shift-toggle', 'Shift Toggle']
   ];
@@ -55,8 +54,7 @@
       'magicq-10scene',
       'magicq-dbo',
       'magicq-swap',
-      'magicq-rpc',
-      'special'
+      'magicq-rpc'
     ],
     scene: [
       'disabled',
@@ -68,8 +66,7 @@
       'magicq-playback-jump',
       'magicq-dbo',
       'magicq-swap',
-      'magicq-rpc',
-      'special'
+      'magicq-rpc'
     ],
     control: [
       'disabled',
@@ -81,8 +78,7 @@
       'magicq-playback-jump',
       'magicq-dbo',
       'magicq-swap',
-      'magicq-rpc',
-      'special'
+      'magicq-rpc'
     ],
     shift: ['shift-hold', 'shift-toggle'],
     fader: ['disabled', 'magicq-executor-fader', 'magicq-playback-level', 'magicq-10scene']
