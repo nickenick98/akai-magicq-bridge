@@ -225,9 +225,9 @@
     if (type === 'midi-event') applyMidi(data);
     if (type === 'live-input') applyLiveInput(data);
     if (type === 'page-changed') applyPage(data);
-    if (type === 'osc-sent') recent = { ...recent, oscSent: [data, ...(recent.oscSent || [])].slice(0, 80) };
-    if (type === 'osc-received') recent = { ...recent, oscReceived: [data, ...(recent.oscReceived || [])].slice(0, 80) };
-    if (type === 'error') recent = { ...recent, errors: [data, ...(recent.errors || [])].slice(0, 80) };
+    if (type === 'osc-sent') recent = { ...recent, oscSent: [data, ...(recent.oscSent || [])].slice(0, 30) };
+    if (type === 'osc-received') recent = { ...recent, oscReceived: [data, ...(recent.oscReceived || [])].slice(0, 30) };
+    if (type === 'error') recent = { ...recent, errors: [data, ...(recent.errors || [])].slice(0, 30) };
   }
 
   async function pollStatus() {
@@ -252,10 +252,19 @@
         }
       }
     };
-    if (data.recent) recent = data.recent;
+    if (data.recent) recent = trimRecent(data.recent);
     if (data.liveInput) applyLiveInput(data.liveInput, false);
     if (data.midi?.shiftActive) activeLayer = 'shift';
     bumpView();
+  }
+
+  function trimRecent(data) {
+    return {
+      midi: (data.midi || []).slice(0, 30),
+      oscSent: (data.oscSent || []).slice(0, 30),
+      oscReceived: (data.oscReceived || []).slice(0, 30),
+      errors: (data.errors || []).slice(0, 30)
+    };
   }
 
   function applyLiveInput(data, updateLast = true) {
@@ -279,7 +288,7 @@
   function applyMidi(event, pushRecent = true) {
     if (!event) return;
     live = { ...live, last: event };
-    if (pushRecent) recent = { ...recent, midi: [event, ...(recent.midi || [])].slice(0, 80) };
+    if (pushRecent) recent = { ...recent, midi: [event, ...(recent.midi || [])].slice(0, 30) };
 
     if (event.event === 'cc') {
       const nextCcs = {

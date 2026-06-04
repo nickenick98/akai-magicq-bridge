@@ -146,7 +146,7 @@ const defaultConfig = {
   },
   apc: APC_DEFAULTS,
   ui: {
-    recentEventLimit: 80
+    recentEventLimit: 30
   },
   state: {
     faders: {},

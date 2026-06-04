@@ -27,6 +27,8 @@ let networkBackupApplying = false;
 let lastNetworkApply = null;
 let lastNetworkBackupApply = null;
 let lastOscStateResend = null;
+let queuedStatusTimer = null;
+let queuedStatusFactory = null;
 
 const app = express();
 const server = http.createServer(app);
@@ -55,7 +57,7 @@ app.use(cors());
 app.use(express.json({ limit: '1mb' }));
 
 function remember(bucket, item) {
-  const limit = config.ui?.recentEventLimit || 80;
+  const limit = Math.min(30, Math.max(5, Number(config.ui?.recentEventLimit || 30)));
   recent[bucket].unshift(item);
   recent[bucket] = recent[bucket].slice(0, limit);
 }
@@ -67,6 +69,27 @@ function broadcast(type, data) {
       client.send(payload);
     }
   }
+}
+
+function queueStatusBroadcast(factory = status) {
+  queuedStatusFactory = factory;
+  if (queuedStatusTimer) return;
+  queuedStatusTimer = setTimeout(() => {
+    queuedStatusTimer = null;
+    const buildStatus = queuedStatusFactory || status;
+    queuedStatusFactory = null;
+    broadcast('status', buildStatus());
+  }, 150);
+  queuedStatusTimer.unref?.();
+}
+
+function broadcastStatusNow(factory = status) {
+  if (queuedStatusTimer) {
+    clearTimeout(queuedStatusTimer);
+    queuedStatusTimer = null;
+    queuedStatusFactory = null;
+  }
+  broadcast('status', factory());
 }
 
 function reportError(error, source = 'server') {
@@ -151,7 +174,7 @@ function reconnect(options = {}) {
   } else {
     syncPageLeds();
   }
-  broadcast('status', status());
+  broadcastStatusNow();
 }
 
 midi.on('midi', (event) => {
@@ -174,14 +197,14 @@ midi.on('midi', (event) => {
       scheduleHardwareLedRecovery('shift-release');
     }
     broadcast('page-changed', config.state);
-    broadcast('status', status());
+    queueStatusBroadcast();
     return;
   }
 
   if (shouldBlockInternalShiftCombo(sourceType, event)) {
     rememberShiftGuard(sourceType, event);
     scheduleHardwareLedRecovery('shift-guard');
-    broadcast('status', status());
+    queueStatusBroadcast();
     return;
   }
 
@@ -190,13 +213,13 @@ midi.on('midi', (event) => {
     const level = scaleFader(event.value, mapping?.range);
     saveFaderValue(event.controller, event.value, level, mapping);
     if (!mapping) {
-      broadcast('status', status());
+      queueStatusBroadcast();
       return;
     }
   }
 
   if (sourceType === 'fader' && mapping?.target?.type === 'disabled') {
-    broadcast('status', status());
+    queueStatusBroadcast();
     return;
   }
 
@@ -215,7 +238,7 @@ midi.on('midi', (event) => {
     if (mapping.target?.type === 'magicq-playback-level') {
       setPlaybackLevel(mapping.target.playback || 1, level);
     }
-    broadcast('status', status());
+    queueStatusBroadcast();
     return;
   }
 
@@ -242,7 +265,7 @@ midi.on('midi', (event) => {
       if (setExecutorState(mapping.target, level)) {
         refreshExecutorTargetLeds(mapping.target);
       }
-      broadcast('status', status());
+      queueStatusBroadcast();
       return;
     }
 
@@ -256,7 +279,7 @@ midi.on('midi', (event) => {
       if (setExecutorState(mapping.target, active ? 100 : 0)) {
         refreshExecutorTargetLeds(mapping.target);
       }
-      broadcast('status', status());
+      queueStatusBroadcast();
       return;
     }
 
@@ -270,7 +293,7 @@ midi.on('midi', (event) => {
       if (setPlaybackFlash(mapping.target.playback || 1, active ? 1 : 0)) {
         applyLedSafe(mapping, active);
       }
-      broadcast('status', status());
+      queueStatusBroadcast();
       return;
     }
 
@@ -290,14 +313,14 @@ midi.on('midi', (event) => {
           setTimeout(() => applyLedSafe(mapping, false), 180);
         }
       }
-      broadcast('status', status());
+      queueStatusBroadcast();
     }
   } catch (error) {
     reportError(error, 'mapping');
   }
 });
 
-midi.on('status', (data) => broadcast('status', { ...status(), midi: data }));
+midi.on('status', (data) => queueStatusBroadcast(() => ({ ...status(), midi: data })));
 midi.on('error', (error) => reportError(error, 'midi'));
 led.on('error', (error) => reportError(error, 'led'));
 
@@ -318,10 +341,10 @@ osc.on('ignored', (data) => {
   console.warn('[osc:ignored]', data);
   remember('errors', { source: 'osc-ignored', ...data });
   broadcast('error', { source: 'osc-ignored', ...data });
-  broadcast('status', status());
+  queueStatusBroadcast();
 });
 
-osc.on('status', (data) => broadcast('status', { ...status(), osc: data }));
+osc.on('status', (data) => queueStatusBroadcast(() => ({ ...status(), osc: data })));
 osc.on('error', (error) => reportError(error, 'osc'));
 
 app.get('/api/config', (req, res) => {
@@ -375,7 +398,7 @@ app.post('/api/midi/select', (req, res) => {
     refreshAllLeds();
   }
   lastMidiDeviceSignature = midiDeviceSignature(midi.listDevices());
-  broadcast('status', status());
+  broadcastStatusNow();
   res.json({ config, status: midiStatus });
 });
 
@@ -388,7 +411,7 @@ app.post('/api/mappings', (req, res) => {
   config = writeConfig(upsertMapping(config, mapping));
   led.setApcLayout(config.apc);
   refreshMappingLed(mapping);
-  broadcast('status', status());
+  broadcastStatusNow();
   res.json(config.mappings);
 });
 
@@ -407,7 +430,7 @@ app.post('/api/mappings/bulk', (req, res) => {
     config = writeConfig(nextConfig);
     led.setApcLayout(config.apc);
     refreshAllLeds();
-    broadcast('status', status());
+    broadcastStatusNow();
     res.json({ ok: true, mappings: config.mappings });
   } catch (error) {
     reportError(error, 'mappings');
@@ -418,7 +441,7 @@ app.post('/api/mappings/bulk', (req, res) => {
 app.delete('/api/mappings/:id', (req, res) => {
   config = writeConfig(deleteMapping(config, req.params.id));
   led.setApcLayout(config.apc);
-  broadcast('status', status());
+  broadcastStatusNow();
   res.json(config.mappings);
 });
 
@@ -448,7 +471,7 @@ app.post('/api/osc/test', (req, res) => {
 app.post('/api/osc/resend', (req, res) => {
   try {
     const result = resendStoredOscStates('manual');
-    broadcast('status', status());
+    broadcastStatusNow();
     res.json({ ok: true, ...result });
   } catch (error) {
     reportError(error, 'osc-resend');
@@ -478,7 +501,7 @@ app.get('/api/network', (req, res) => {
 app.post('/api/network', (req, res) => {
   config = updateConfig({ network: req.body || {} });
   startNetworkBackupTimer();
-  broadcast('status', status());
+  broadcastStatusNow();
   res.json(getNetworkStatus(config));
 });
 
@@ -494,7 +517,7 @@ app.post('/api/network/apply', async (req, res) => {
       reportError(new Error(lastNetworkApply.errors.join('; ')), 'network');
     }
     startNetworkBackupTimer();
-    broadcast('status', status());
+    broadcastStatusNow();
     res.json({
       ok: networkStatus.lastApply?.ok !== false,
       error: networkStatus.lastApply?.errors?.join('\n') || '',
@@ -512,7 +535,7 @@ app.post('/api/page', (req, res) => {
   config.state = { ...(config.state || {}), currentPage };
   refreshAllLeds();
   broadcast('page-changed', config.state);
-  broadcast('status', status());
+  broadcastStatusNow();
   res.json(config.state);
 });
 
@@ -731,7 +754,7 @@ function watchMidiDevices() {
       linuxApcHardwareMissing,
       hardware
     });
-    broadcast('status', status());
+    queueStatusBroadcast();
   }
 
   if (linuxApcHardwareMissing || (deviceMissing && (!desiredInput || !desiredOutput))) {
@@ -742,7 +765,7 @@ function watchMidiDevices() {
     const now = Date.now();
     const reconnectInterval = Number(config.midi?.reconnectIntervalMs || 2000);
     if (now - lastMidiReconnectAttemptAt < reconnectInterval) {
-      if (devicesChanged) broadcast('status', status());
+      if (devicesChanged) queueStatusBroadcast();
       return;
     }
     lastMidiReconnectAttemptAt = now;
@@ -751,12 +774,12 @@ function watchMidiDevices() {
       sendApcIntroductionSafe('midi-watch');
       refreshAllLeds();
     }
-    broadcast('status', status());
+    queueStatusBroadcast();
     return;
   }
 
   if (devicesChanged) {
-    broadcast('status', status());
+    queueStatusBroadcast();
   }
 }
 
@@ -995,9 +1018,6 @@ function resendStoredOscStates(reason = 'timer') {
     sent: sent.filter(Boolean).length,
     at: new Date().toISOString()
   };
-  if (reason === 'manual') {
-    broadcast('status', status());
-  }
   return lastOscStateResend;
 }
 
@@ -1029,7 +1049,7 @@ async function startNetworkBackup() {
     if (networkStatus?.lastBackupApply && !networkStatus.lastBackupApply.ok) {
       reportError(new Error(networkStatus.lastBackupApply.errors.join('; ')), 'network-backup');
     }
-    broadcast('status', status());
+    queueStatusBroadcast();
   } catch (error) {
     reportError(error, 'network-backup');
   } finally {
@@ -1226,19 +1246,19 @@ function updateFromOscFeedback(data) {
     setExecutorState(target, oscLevelToPercent(firstArg), 'osc');
     refreshMappingsForTarget('magicq-executor-button', target);
     refreshMappingsForTarget('magicq-executor-fader', target);
-    broadcast('status', status());
+    queueStatusBroadcast();
     return;
   }
 
   if (playbackMatch) {
     setPlaybackLevel(Number(playbackMatch[1]), oscLevelToPercent(firstArg), 'osc');
-    broadcast('status', status());
+    queueStatusBroadcast();
     return;
   }
 
   if (playbackFlashMatch) {
     setPlaybackFlash(Number(playbackFlashMatch[1]), firstArg, 'osc');
-    broadcast('status', status());
+    queueStatusBroadcast();
   }
 }
 
