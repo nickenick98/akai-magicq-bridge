@@ -1085,7 +1085,34 @@ function startSystemUpdate() {
 
 async function runSystemUpdate() {
   appendSystemUpdateLog('Update gestartet.');
-  writeSystemUpdateStatus({ ...readSystemUpdateStatus(), step: 'git-pull' });
+  writeSystemUpdateStatus({ ...readSystemUpdateStatus(), step: 'git-fetch' });
+  await runSystemUpdateCommand('Git Fetch', 'git', ['fetch', '--prune']);
+
+  writeSystemUpdateStatus({ ...readSystemUpdateStatus(), step: 'check-update' });
+  const updateInfo = await checkGitUpdateAvailable();
+  appendSystemUpdateLog(`Aktueller Stand: ${updateInfo.head}`);
+  appendSystemUpdateLog(`Upstream: ${updateInfo.upstream} (${updateInfo.upstreamHead})`);
+  appendSystemUpdateLog(`Commits hinter Upstream: ${updateInfo.behind}`);
+
+  if (updateInfo.behind <= 0) {
+    writeSystemUpdateStatus({
+      ...readSystemUpdateStatus(),
+      state: 'up-to-date',
+      running: false,
+      step: 'up-to-date',
+      checkedAt: new Date().toISOString(),
+      head: updateInfo.head,
+      upstream: updateInfo.upstream,
+      upstreamHead: updateInfo.upstreamHead,
+      behind: updateInfo.behind
+    });
+    appendSystemUpdateLog('Kein Update vorhanden. Build und Neustart werden uebersprungen.');
+    systemUpdateRunning = false;
+    broadcast('status', status());
+    return;
+  }
+
+  writeSystemUpdateStatus({ ...readSystemUpdateStatus(), step: 'git-pull', behind: updateInfo.behind });
   await runSystemUpdateCommand('Git Pull', 'git', ['pull', '--ff-only']);
 
   writeSystemUpdateStatus({ ...readSystemUpdateStatus(), step: 'build' });
@@ -1120,6 +1147,50 @@ function runSystemUpdateCommand(label, bin, args) {
       appendSystemUpdateLog(`### ${label} beendet mit Code ${code}`);
       if (code === 0) resolve();
       else reject(new Error(`${label} fehlgeschlagen mit Code ${code}`));
+    });
+  });
+}
+
+async function checkGitUpdateAvailable() {
+  const head = (await runSystemUpdateCommandCapture('Git HEAD', 'git', ['rev-parse', 'HEAD'])).trim();
+  let upstream = '';
+  try {
+    upstream = (await runSystemUpdateCommandCapture('Git Upstream', 'git', ['rev-parse', '--abbrev-ref', '--symbolic-full-name', '@{u}'])).trim();
+  } catch {
+    upstream = 'origin/main';
+  }
+
+  const upstreamHead = (await runSystemUpdateCommandCapture('Git Upstream HEAD', 'git', ['rev-parse', upstream])).trim();
+  const behindText = (await runSystemUpdateCommandCapture('Git Behind Count', 'git', ['rev-list', '--count', `HEAD..${upstream}`])).trim();
+  const behind = Math.max(0, Number(behindText) || 0);
+  return { head, upstream, upstreamHead, behind };
+}
+
+function runSystemUpdateCommandCapture(label, bin, args) {
+  appendSystemUpdateLog(`\n### ${label}: ${bin} ${args.join(' ')}`);
+  return new Promise((resolve, reject) => {
+    const child = spawn(bin, args, {
+      cwd: path.join(__dirname, '..'),
+      windowsHide: true
+    });
+    let stdout = '';
+    let stderr = '';
+
+    child.stdout.on('data', (data) => {
+      const text = data.toString();
+      stdout += text;
+      appendSystemUpdateLog(text);
+    });
+    child.stderr.on('data', (data) => {
+      const text = data.toString();
+      stderr += text;
+      appendSystemUpdateLog(text);
+    });
+    child.on('error', reject);
+    child.on('close', (code) => {
+      appendSystemUpdateLog(`### ${label} beendet mit Code ${code}`);
+      if (code === 0) resolve(stdout);
+      else reject(new Error(`${label} fehlgeschlagen mit Code ${code}: ${stderr || stdout}`));
     });
   });
 }
