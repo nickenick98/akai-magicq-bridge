@@ -1851,6 +1851,7 @@
   {:else}
     <section class="loading">Lade Bridge...</section>
   {/if}
+  <footer class="brand-credit">Powered by Veranstaltungstechnik Löwe</footer>
 </main>
 
 {#snippet LedControls(led, onChange, sourceType)}
@@ -1888,6 +1889,7 @@
   h2 { font-size: 17px; }
   .topbar p, .empty { color: #9cac9d; }
   section { padding: 16px; margin-bottom: 14px; }
+  .brand-credit { padding: 2px 4px 0; color: #7f8d82; font-size: 12px; font-weight: 800; letter-spacing: 0; text-align: right; }
   .section-head, .actions, .status-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
   .section-head { margin-bottom: 12px; }
   .pill { border: 1px solid #5a3a3a; color: #ffb8a8; border-radius: 999px; padding: 5px 9px; font-size: 12px; font-weight: 800; }
