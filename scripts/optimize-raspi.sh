@@ -2,6 +2,7 @@
 set -euo pipefail
 
 SERVICE_NAME="${SERVICE_NAME:-akai-magicq-bridge}"
+ETH_INTERFACE="${ETH_INTERFACE:-eth0}"
 FAST_SERVICE="${FAST_SERVICE:-1}"
 DISABLE_BLUETOOTH="${DISABLE_BLUETOOTH:-1}"
 DISABLE_WIFI="${DISABLE_WIFI:-0}"
@@ -12,6 +13,8 @@ DISABLE_MODEM="${DISABLE_MODEM:-1}"
 DISABLE_APT_TIMERS="${DISABLE_APT_TIMERS:-0}"
 LIMIT_JOURNAL="${LIMIT_JOURNAL:-1}"
 RESTORE_NETWORK="${RESTORE_NETWORK:-0}"
+RESTORE_ETH_DHCP="${RESTORE_ETH_DHCP:-1}"
+RESTORE_WIFI="${RESTORE_WIFI:-0}"
 
 if [[ "${1:-}" == "--restore-network" ]]; then
   RESTORE_NETWORK=1
@@ -90,7 +93,6 @@ remove_boot_overlay() {
 
 restore_network() {
   echo "Restoring network-safe defaults..."
-  remove_boot_overlay "dtoverlay=disable-wifi"
 
   if unit_exists NetworkManager.service; then
     "${SUDO[@]}" systemctl unmask NetworkManager.service >/dev/null 2>&1 || true
@@ -99,10 +101,38 @@ restore_network() {
 
   if command -v nmcli >/dev/null 2>&1; then
     "${SUDO[@]}" nmcli networking on >/dev/null 2>&1 || true
-    "${SUDO[@]}" nmcli radio wifi on >/dev/null 2>&1 || true
+    "${SUDO[@]}" nmcli device set "$ETH_INTERFACE" managed yes >/dev/null 2>&1 || true
+
+    if [[ "$RESTORE_ETH_DHCP" == "1" ]]; then
+      local connection
+      connection="$(nmcli -g GENERAL.CONNECTION device show "$ETH_INTERFACE" 2>/dev/null | head -n 1 || true)"
+      if [[ -z "$connection" || "$connection" == "--" ]]; then
+        connection="$(nmcli -t -f NAME,DEVICE connection show 2>/dev/null | awk -F: -v dev="$ETH_INTERFACE" '$2 == dev {print $1; exit}')"
+      fi
+
+      if [[ -z "$connection" || "$connection" == "--" ]]; then
+        connection="$ETH_INTERFACE"
+        echo "Creating DHCP connection $connection for $ETH_INTERFACE..."
+        "${SUDO[@]}" nmcli connection add type ethernet ifname "$ETH_INTERFACE" con-name "$connection" ipv4.method auto ipv6.method auto connection.autoconnect yes >/dev/null 2>&1 || true
+      else
+        echo "Setting $connection on $ETH_INTERFACE to DHCP/autoconnect..."
+        "${SUDO[@]}" nmcli connection modify "$connection" connection.interface-name "$ETH_INTERFACE" connection.autoconnect yes ipv4.method auto ipv4.addresses "" ipv4.gateway "" ipv4.dns "" ipv4.may-fail yes >/dev/null 2>&1 || true
+      fi
+
+      "${SUDO[@]}" nmcli connection up "$connection" >/dev/null 2>&1 || "${SUDO[@]}" nmcli device reapply "$ETH_INTERFACE" >/dev/null 2>&1 || true
+    fi
+
+    if [[ "$RESTORE_WIFI" == "1" ]]; then
+      remove_boot_overlay "dtoverlay=disable-wifi"
+      "${SUDO[@]}" nmcli radio wifi on >/dev/null 2>&1 || true
+    fi
   fi
 
-  echo "Network restore done. Reboot is recommended if a boot overlay was removed:"
+  echo "Network restore done."
+  echo "Current addresses:"
+  ip addr show "$ETH_INTERFACE" || true
+  echo
+  echo "Reboot is recommended after network changes:"
   echo "  sudo reboot"
 }
 
@@ -143,12 +173,6 @@ if [[ "$DISABLE_WIFI" == "1" ]]; then
     append_boot_overlay "dtoverlay=disable-wifi"
   else
     echo "Wi-Fi boot overlay is left untouched. Use PERMANENT_DISABLE_WIFI=1 only for Ethernet-only appliances."
-  fi
-else
-  remove_boot_overlay "dtoverlay=disable-wifi"
-  if command -v nmcli >/dev/null 2>&1; then
-    "${SUDO[@]}" nmcli networking on >/dev/null 2>&1 || true
-    "${SUDO[@]}" nmcli radio wifi on >/dev/null 2>&1 || true
   fi
 fi
 

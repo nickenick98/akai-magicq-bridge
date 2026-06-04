@@ -180,7 +180,7 @@ Standardmaessig macht das Skript:
 - Triggerhappy aus
 - ModemManager aus
 - Journald-Groesse begrenzen
-- WLAN bleibt an
+- WLAN bleibt unveraendert
 - automatische apt-Timer bleiben an
 
 Wenn du Ethernet-only faehrst und WLAN sicher nicht brauchst:
@@ -195,10 +195,23 @@ Das schaltet nur den WLAN-Radio ueber NetworkManager aus. Wenn du WLAN wirklich 
 DISABLE_WIFI=1 PERMANENT_DISABLE_WIFI=1 ./scripts/optimize-raspi.sh
 ```
 
-Wenn der Pi danach nur noch ueber die Backup-IP erreichbar ist oder WLAN nicht mehr kommt:
+Wenn der Pi danach nur noch ueber die Backup-IP erreichbar ist und keine normale Ethernet-IP bekommt:
 
 ```bash
 ./scripts/optimize-raspi.sh --restore-network
+sudo reboot
+```
+
+Das setzt standardmaessig `eth0` wieder auf DHCP/Autoconnect. WLAN bleibt dabei aus/unveraendert. Falls du eine andere Schnittstelle nutzt:
+
+```bash
+ETH_INTERFACE=enp1s0 ./scripts/optimize-raspi.sh --restore-network
+```
+
+Nur falls WLAN bewusst wieder aktiviert werden soll:
+
+```bash
+RESTORE_WIFI=1 ./scripts/optimize-raspi.sh --restore-network
 sudo reboot
 ```
 
