@@ -26,10 +26,14 @@
         if (fallback) fallback.remove();
       };
       window.addEventListener('error', (event) => {
-        window.__akaiBridgeShowFallbackError(event.message || event.error?.message || event.filename);
+        var errorMessage = event && event.error && event.error.message ? event.error.message : '';
+        window.__akaiBridgeShowFallbackError((event && event.message) || errorMessage || (event && event.filename));
       });
       window.addEventListener('unhandledrejection', (event) => {
-        window.__akaiBridgeShowFallbackError(event.reason?.stack || event.reason?.message || event.reason);
+        var reason = event && event.reason ? event.reason : '';
+        var reasonMessage = reason && reason.message ? reason.message : '';
+        var reasonStack = reason && reason.stack ? reason.stack : '';
+        window.__akaiBridgeShowFallbackError(reasonStack || reasonMessage || reason);
       });
     </script>
     <div style="display: contents">%sveltekit.body%</div>
