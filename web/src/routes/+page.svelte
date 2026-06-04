@@ -160,6 +160,10 @@
   $: quickMapItems = quickMapSelection(selection, quickMap);
   $: quickMapCanSave = quickMapItems.length > 0;
   $: bulkApplyEnabled = selection.length > 0 && (bulkTargetEnabled || bulkActionEnabled || bulkLedEnabled || (quickMapEnabled && quickMapCanSave));
+  $: canCheckUpdate = status.network?.platform === 'linux' && !systemUpdate?.running && !systemUpdate?.checking;
+  $: canRunUpdate = canCheckUpdate && systemUpdate?.githubReachable === true && systemUpdate?.updateAvailable === true;
+  $: systemUpdateHeaderLabel = systemUpdateLabel(systemUpdate);
+  $: systemUpdateHeaderOk = systemUpdateOk(systemUpdate);
 
   onMount(async () => {
     await loadInitial();
@@ -1198,11 +1202,11 @@
   }
 
   function canCheckSystemUpdate() {
-    return status.network?.platform === 'linux' && !systemUpdate?.running && !systemUpdate?.checking;
+    return canCheckUpdate;
   }
 
   function canRunSystemUpdate() {
-    return canCheckSystemUpdate() && systemUpdate?.githubReachable === true && systemUpdate?.updateAvailable === true;
+    return canRunUpdate;
   }
 
   function systemUpdateLabel(update = systemUpdate || {}) {
@@ -1339,7 +1343,7 @@
       <span class:ok={status.midi?.outputConnected} class="pill">MIDI Out {status.midi?.outputConnected ? 'ok' : 'off'}</span>
       <span class:ok={status.osc?.ready} class="pill">OSC {status.osc?.ready ? 'ready' : 'off'}</span>
       <span class:ok={status.oscResync?.enabled} class="pill">Resync {status.oscResync?.enabled ? `${Math.round((status.oscResync?.intervalMs || 0) / 1000)}s` : 'aus'}</span>
-      <span class:ok={systemUpdateOk()} class="pill">Update {systemUpdateLabel()}</span>
+      <span class:ok={systemUpdateHeaderOk} class="pill">Update {systemUpdateHeaderLabel}</span>
     </div>
   </header>
 
@@ -1352,8 +1356,8 @@
           <button class="secondary" on:click={reconnect}>Neu verbinden</button>
           <button class="secondary" on:click={resyncOscStates}>OSC Resync jetzt</button>
           {#if status.network?.platform === 'linux'}
-            <button class="secondary" disabled={!canCheckSystemUpdate()} on:click={() => checkSystemUpdate(false)}>Update prüfen</button>
-            <button class="secondary" disabled={!canRunSystemUpdate()} on:click={runSystemUpdate}>Update installieren</button>
+            <button class="secondary" disabled={!canCheckUpdate} on:click={() => checkSystemUpdate(false)}>Update prüfen</button>
+            <button class="secondary" disabled={!canRunUpdate} on:click={runSystemUpdate}>Update installieren</button>
           {/if}
         </div>
       </div>
@@ -1412,7 +1416,7 @@
       </div>
       {#if status.network?.platform === 'linux'}
         <p class="hint">
-          Update: {systemUpdateLabel()}
+          Update: {systemUpdateHeaderLabel}
           {#if systemUpdate?.checkedAt}
             - zuletzt geprüft {new Date(systemUpdate.checkedAt).toLocaleTimeString()}
           {/if}
