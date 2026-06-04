@@ -98,7 +98,7 @@ class OscBridge extends EventEmitter {
     this.feedbackTimer = null;
   }
 
-  send(address, args = [], options = {}) {
+  send(address, args = []) {
     if (!this.udpPort || !this.ready) {
       throw new Error('OSC port is not ready');
     }
@@ -116,9 +116,7 @@ class OscBridge extends EventEmitter {
       remote: `${this.config.magicq.ip}:${this.config.magicq.sendPort}`,
       at: this.lastSentAt
     };
-    if (!options.silent) {
-      this.emit('sent', data);
-    }
+    this.emit('sent', data);
     return data;
   }
 

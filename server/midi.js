@@ -320,7 +320,7 @@ function listAlsaDevices() {
   try {
     const output = execFileSync('aconnect', ['-l'], {
       encoding: 'utf8',
-      timeout: 750,
+      timeout: 2000,
       stdio: ['ignore', 'pipe', 'ignore']
     });
     const ports = parseAconnectPorts(output);

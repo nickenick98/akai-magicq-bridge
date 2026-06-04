@@ -1,14 +1,12 @@
 <script>
   export let title = '';
   export let items = [];
-
-  $: visibleItems = (items || []).slice(0, 30);
 </script>
 
 <div class="event-list">
   <h3>{title}</h3>
-  {#each visibleItems as item}
-    <pre>{JSON.stringify(item)}</pre>
+  {#each items || [] as item}
+    <pre>{JSON.stringify(item, null, 2)}</pre>
   {:else}
     <p>Keine Events</p>
   {/each}
@@ -16,12 +14,12 @@
 
 <style>
   .event-list {
-    min-height: 180px;
-    max-height: 320px;
+    min-height: 240px;
+    max-height: 420px;
     overflow: auto;
     border: 1px solid #2d372f;
     border-radius: 8px;
-    padding: 10px;
+    padding: 12px;
     background: #111612;
   }
 
@@ -32,16 +30,14 @@
   }
 
   pre {
-    margin: 0 0 6px;
-    padding: 7px;
+    margin: 0 0 8px;
+    padding: 10px;
     overflow: auto;
     border-radius: 6px;
     background: #090c0a;
     color: #d7f6d2;
-    font-size: 10.5px;
-    line-height: 1.25;
-    white-space: pre-wrap;
-    word-break: break-word;
+    font-size: 11px;
+    line-height: 1.35;
   }
 
   p {

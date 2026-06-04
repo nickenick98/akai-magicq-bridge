@@ -17,7 +17,6 @@ let pendingConfigWrite = null;
 let ledRefreshTimer = null;
 let midiWatchTimer = null;
 let networkBackupTimer = null;
-let oscStateResendTimer = null;
 let ledRecoveryTimers = new Set();
 let lastMidiDeviceSignature = '';
 let lastMidiReconnectAttemptAt = 0;
@@ -26,9 +25,6 @@ let lastShiftGuardReportAt = 0;
 let networkBackupApplying = false;
 let lastNetworkApply = null;
 let lastNetworkBackupApply = null;
-let lastOscStateResend = null;
-let queuedStatusTimer = null;
-let queuedStatusFactory = null;
 
 const app = express();
 const server = http.createServer(app);
@@ -50,14 +46,12 @@ const liveInputState = {
   notes: {},
   ccs: {}
 };
-hydrateRuntimeState(config.state, { reset: true });
-config.state = writeState(config.state);
 
 app.use(cors());
 app.use(express.json({ limit: '1mb' }));
 
 function remember(bucket, item) {
-  const limit = Math.min(30, Math.max(5, Number(config.ui?.recentEventLimit || 30)));
+  const limit = config.ui?.recentEventLimit || 80;
   recent[bucket].unshift(item);
   recent[bucket] = recent[bucket].slice(0, limit);
 }
@@ -71,27 +65,6 @@ function broadcast(type, data) {
   }
 }
 
-function queueStatusBroadcast(factory = status) {
-  queuedStatusFactory = factory;
-  if (queuedStatusTimer) return;
-  queuedStatusTimer = setTimeout(() => {
-    queuedStatusTimer = null;
-    const buildStatus = queuedStatusFactory || status;
-    queuedStatusFactory = null;
-    broadcast('status', buildStatus());
-  }, 150);
-  queuedStatusTimer.unref?.();
-}
-
-function broadcastStatusNow(factory = status) {
-  if (queuedStatusTimer) {
-    clearTimeout(queuedStatusTimer);
-    queuedStatusTimer = null;
-    queuedStatusFactory = null;
-  }
-  broadcast('status', factory());
-}
-
 function reportError(error, source = 'server') {
   const data = {
     source,
@@ -103,7 +76,7 @@ function reportError(error, source = 'server') {
   broadcast('error', data);
 }
 
-function status(options = {}) {
+function status() {
   return {
     midi: midi.getStatus(),
     osc: osc.getStatus(),
@@ -112,11 +85,10 @@ function status(options = {}) {
       ...(lastNetworkApply ? { lastApply: lastNetworkApply } : {}),
       ...(lastNetworkBackupApply ? { lastBackupApply: lastNetworkBackupApply } : {})
     },
-    ...(options.includeDevices ? { devices: midi.listDevices() } : {}),
+    devices: midi.listDevices(),
     state: config.state || { faders: {}, currentPage: 1 },
     executorState,
     playbackState,
-    oscStateResend: lastOscStateResend,
     liveInput: liveInputState
   };
 }
@@ -174,7 +146,7 @@ function reconnect(options = {}) {
   } else {
     syncPageLeds();
   }
-  broadcastStatusNow();
+  broadcast('status', status());
 }
 
 midi.on('midi', (event) => {
@@ -197,14 +169,14 @@ midi.on('midi', (event) => {
       scheduleHardwareLedRecovery('shift-release');
     }
     broadcast('page-changed', config.state);
-    queueStatusBroadcast();
+    broadcast('status', status());
     return;
   }
 
   if (shouldBlockInternalShiftCombo(sourceType, event)) {
     rememberShiftGuard(sourceType, event);
     scheduleHardwareLedRecovery('shift-guard');
-    queueStatusBroadcast();
+    broadcast('status', status());
     return;
   }
 
@@ -213,13 +185,13 @@ midi.on('midi', (event) => {
     const level = scaleFader(event.value, mapping?.range);
     saveFaderValue(event.controller, event.value, level, mapping);
     if (!mapping) {
-      queueStatusBroadcast();
+      broadcast('status', status());
       return;
     }
   }
 
   if (sourceType === 'fader' && mapping?.target?.type === 'disabled') {
-    queueStatusBroadcast();
+    broadcast('status', status());
     return;
   }
 
@@ -238,7 +210,7 @@ midi.on('midi', (event) => {
     if (mapping.target?.type === 'magicq-playback-level') {
       setPlaybackLevel(mapping.target.playback || 1, level);
     }
-    queueStatusBroadcast();
+    broadcast('status', status());
     return;
   }
 
@@ -265,7 +237,7 @@ midi.on('midi', (event) => {
       if (setExecutorState(mapping.target, level)) {
         refreshExecutorTargetLeds(mapping.target);
       }
-      queueStatusBroadcast();
+      broadcast('status', status());
       return;
     }
 
@@ -279,7 +251,7 @@ midi.on('midi', (event) => {
       if (setExecutorState(mapping.target, active ? 100 : 0)) {
         refreshExecutorTargetLeds(mapping.target);
       }
-      queueStatusBroadcast();
+      broadcast('status', status());
       return;
     }
 
@@ -293,7 +265,7 @@ midi.on('midi', (event) => {
       if (setPlaybackFlash(mapping.target.playback || 1, active ? 1 : 0)) {
         applyLedSafe(mapping, active);
       }
-      queueStatusBroadcast();
+      broadcast('status', status());
       return;
     }
 
@@ -313,14 +285,14 @@ midi.on('midi', (event) => {
           setTimeout(() => applyLedSafe(mapping, false), 180);
         }
       }
-      queueStatusBroadcast();
+      broadcast('status', status());
     }
   } catch (error) {
     reportError(error, 'mapping');
   }
 });
 
-midi.on('status', (data) => queueStatusBroadcast(() => ({ ...status(), midi: data })));
+midi.on('status', (data) => broadcast('status', { ...status(), midi: data }));
 midi.on('error', (error) => reportError(error, 'midi'));
 led.on('error', (error) => reportError(error, 'led'));
 
@@ -341,27 +313,24 @@ osc.on('ignored', (data) => {
   console.warn('[osc:ignored]', data);
   remember('errors', { source: 'osc-ignored', ...data });
   broadcast('error', { source: 'osc-ignored', ...data });
-  queueStatusBroadcast();
+  broadcast('status', status());
 });
 
-osc.on('status', (data) => queueStatusBroadcast(() => ({ ...status(), osc: data })));
+osc.on('status', (data) => broadcast('status', { ...status(), osc: data }));
 osc.on('error', (error) => reportError(error, 'osc'));
 
 app.get('/api/config', (req, res) => {
   config = readConfig();
   config.state = readState();
-  hydrateRuntimeState(config.state);
   res.json(config);
 });
 
 app.post('/api/config', (req, res) => {
   config = updateConfig(req.body || {});
   config.state = readState();
-  hydrateRuntimeState(config.state);
   led.setApcLayout(config.apc);
   reconnect();
   startNetworkBackupTimer();
-  startOscStateResendTimer();
   res.json(config);
 });
 
@@ -374,11 +343,9 @@ app.post('/api/backup/restore', (req, res) => {
     const restored = restoreBackupPayload(req.body || {});
     config = writeConfig(restored.config);
     config.state = writeState(restored.state);
-    hydrateRuntimeState(config.state, { reset: true });
     led.setApcLayout(config.apc);
     reconnect();
     startNetworkBackupTimer();
-    startOscStateResendTimer();
     res.json({ ok: true, config, state: config.state });
   } catch (error) {
     reportError(error, 'backup');
@@ -398,7 +365,7 @@ app.post('/api/midi/select', (req, res) => {
     refreshAllLeds();
   }
   lastMidiDeviceSignature = midiDeviceSignature(midi.listDevices());
-  broadcastStatusNow();
+  broadcast('status', status());
   res.json({ config, status: midiStatus });
 });
 
@@ -411,7 +378,7 @@ app.post('/api/mappings', (req, res) => {
   config = writeConfig(upsertMapping(config, mapping));
   led.setApcLayout(config.apc);
   refreshMappingLed(mapping);
-  broadcastStatusNow();
+  broadcast('status', status());
   res.json(config.mappings);
 });
 
@@ -430,7 +397,7 @@ app.post('/api/mappings/bulk', (req, res) => {
     config = writeConfig(nextConfig);
     led.setApcLayout(config.apc);
     refreshAllLeds();
-    broadcastStatusNow();
+    broadcast('status', status());
     res.json({ ok: true, mappings: config.mappings });
   } catch (error) {
     reportError(error, 'mappings');
@@ -441,7 +408,7 @@ app.post('/api/mappings/bulk', (req, res) => {
 app.delete('/api/mappings/:id', (req, res) => {
   config = writeConfig(deleteMapping(config, req.params.id));
   led.setApcLayout(config.apc);
-  broadcastStatusNow();
+  broadcast('status', status());
   res.json(config.mappings);
 });
 
@@ -468,17 +435,6 @@ app.post('/api/osc/test', (req, res) => {
   }
 });
 
-app.post('/api/osc/resend', (req, res) => {
-  try {
-    const result = resendStoredOscStates('manual');
-    broadcastStatusNow();
-    res.json({ ok: true, ...result });
-  } catch (error) {
-    reportError(error, 'osc-resend');
-    res.status(500).json({ ok: false, error: error.message });
-  }
-});
-
 app.post('/api/led/refresh', (req, res) => {
   try {
     refreshAllLeds();
@@ -501,7 +457,7 @@ app.get('/api/network', (req, res) => {
 app.post('/api/network', (req, res) => {
   config = updateConfig({ network: req.body || {} });
   startNetworkBackupTimer();
-  broadcastStatusNow();
+  broadcast('status', status());
   res.json(getNetworkStatus(config));
 });
 
@@ -517,7 +473,7 @@ app.post('/api/network/apply', async (req, res) => {
       reportError(new Error(lastNetworkApply.errors.join('; ')), 'network');
     }
     startNetworkBackupTimer();
-    broadcastStatusNow();
+    broadcast('status', status());
     res.json({
       ok: networkStatus.lastApply?.ok !== false,
       error: networkStatus.lastApply?.errors?.join('\n') || '',
@@ -535,12 +491,12 @@ app.post('/api/page', (req, res) => {
   config.state = { ...(config.state || {}), currentPage };
   refreshAllLeds();
   broadcast('page-changed', config.state);
-  broadcastStatusNow();
+  broadcast('status', status());
   res.json(config.state);
 });
 
 app.get('/api/status', (req, res) => {
-  res.json({ ...status({ includeDevices: req.query.devices === '1' }), recent });
+  res.json({ ...status(), recent });
 });
 
 wss.on('connection', (socket) => {
@@ -569,25 +525,10 @@ server.on('connection', (socket) => {
 });
 
 const staticDir = path.join(__dirname, '..', 'web', 'build');
-app.use(
-  express.static(staticDir, {
-    setHeaders: (res, filePath) => {
-      if (path.basename(filePath) === 'index.html') {
-        res.setHeader('Cache-Control', 'no-store');
-      }
-      if (filePath.includes(`${path.sep}_app${path.sep}immutable${path.sep}`)) {
-        res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
-      }
-    }
-  })
-);
+app.use(express.static(staticDir));
 app.get('*', (req, res, next) => {
   if (req.path.startsWith('/api')) return next();
-  if (req.path.startsWith('/_app/') || path.extname(req.path)) {
-    return res.status(404).send('Not found');
-  }
   try {
-    res.setHeader('Cache-Control', 'no-store');
     res.type('html').send(require('fs').readFileSync(path.join(staticDir, 'index.html'), 'utf8'));
   } catch (error) {
     next(error);
@@ -598,7 +539,6 @@ reconnect();
 startLedRefreshTimer();
 startMidiWatchTimer();
 startNetworkBackupTimer();
-startOscStateResendTimer();
 
 const port = Number(process.env.PORT || config.server.port || 3001);
 const host = config.server.host || '0.0.0.0';
@@ -625,17 +565,13 @@ function shutdown(signal = 'SIGTERM') {
     clearInterval(networkBackupTimer);
     networkBackupTimer = null;
   }
-  if (oscStateResendTimer) {
-    clearInterval(oscStateResendTimer);
-    oscStateResendTimer = null;
-  }
   for (const timer of ledRecoveryTimers) {
     clearTimeout(timer);
   }
   ledRecoveryTimers.clear();
   if (pendingConfigWrite) {
     clearTimeout(pendingConfigWrite);
-    writeState(config.state);
+    config.state = writeState(config.state);
   }
   led.stopAll();
   midi.close();
@@ -754,7 +690,7 @@ function watchMidiDevices() {
       linuxApcHardwareMissing,
       hardware
     });
-    queueStatusBroadcast();
+    broadcast('status', status());
   }
 
   if (linuxApcHardwareMissing || (deviceMissing && (!desiredInput || !desiredOutput))) {
@@ -765,7 +701,7 @@ function watchMidiDevices() {
     const now = Date.now();
     const reconnectInterval = Number(config.midi?.reconnectIntervalMs || 2000);
     if (now - lastMidiReconnectAttemptAt < reconnectInterval) {
-      if (devicesChanged) queueStatusBroadcast();
+      if (devicesChanged) broadcast('status', status());
       return;
     }
     lastMidiReconnectAttemptAt = now;
@@ -774,12 +710,12 @@ function watchMidiDevices() {
       sendApcIntroductionSafe('midi-watch');
       refreshAllLeds();
     }
-    queueStatusBroadcast();
+    broadcast('status', status());
     return;
   }
 
   if (devicesChanged) {
-    queueStatusBroadcast();
+    broadcast('status', status());
   }
 }
 
@@ -901,145 +837,6 @@ function startNetworkBackupTimer() {
   networkBackupTimer = setInterval(startNetworkBackup, interval);
 }
 
-function startOscStateResendTimer() {
-  if (oscStateResendTimer) {
-    clearInterval(oscStateResendTimer);
-    oscStateResendTimer = null;
-  }
-
-  const settings = oscStateResendSettings();
-  if (!settings.enabled) {
-    lastOscStateResend = {
-      enabled: false,
-      intervalMs: settings.intervalMs,
-      sent: 0,
-      at: new Date().toISOString()
-    };
-    return;
-  }
-
-  oscStateResendTimer = setInterval(() => {
-    try {
-      resendStoredOscStates('timer');
-    } catch (error) {
-      reportError(error, 'osc-resend');
-    }
-  }, settings.intervalMs);
-  oscStateResendTimer.unref?.();
-}
-
-function oscStateResendSettings() {
-  return {
-    enabled: config.feedback?.resendStatesEnabled === true,
-    intervalMs: Math.max(5000, Number(config.feedback?.resendStatesIntervalMs || 10000))
-  };
-}
-
-function resendStoredOscStates(reason = 'timer') {
-  const settings = oscStateResendSettings();
-  if (reason !== 'manual' && !settings.enabled) {
-    return { sent: 0, skipped: true, reason: 'disabled' };
-  }
-
-  if (!osc.getStatus().ready) {
-    return { sent: 0, skipped: true, reason: 'osc-not-ready' };
-  }
-
-  const seenExec = new Set();
-  const seenPlaybackLevel = new Set();
-  const seenPlaybackFlash = new Set();
-  const seenTenScene = new Set();
-  const sent = [];
-  const options = { silent: reason === 'timer' };
-
-  for (const mapping of config.mappings || []) {
-    const target = mapping.target || {};
-    if (!target.type || target.type === 'disabled') continue;
-
-    if (target.type === 'magicq-executor-fader') {
-      const level = mappedFaderLevel(mapping);
-      if (level === undefined) continue;
-      const key = `${target.page}/${target.executor}`;
-      if (!seenExec.has(key)) {
-        seenExec.add(key);
-        sent.push(sendExecutorLevel(target, level, options));
-      }
-      continue;
-    }
-
-    if (target.type === 'magicq-executor-button' || target.type === 'magicq-executor-adjust') {
-      const key = `${target.page}/${target.executor}`;
-      const state = executorState[key];
-      if (!state || state.level === undefined || seenExec.has(key)) continue;
-      seenExec.add(key);
-      sent.push(sendExecutorLevel(target, state.level, options));
-      continue;
-    }
-
-    if (target.type === 'magicq-playback-level' || target.type === 'magicq-playback-adjust') {
-      const playback = String(target.playback || target.executor || 1);
-      const level = mappedFaderLevel(mapping) ?? playbackState[playback]?.level;
-      if (level !== undefined && !seenPlaybackLevel.has(playback)) {
-        seenPlaybackLevel.add(playback);
-        sent.push(sendPlaybackLevel(playback, level, options));
-      }
-      continue;
-    }
-
-    if (target.type === 'magicq-playback-flash') {
-      const playback = String(target.playback || 1);
-      const flash = playbackState[playback]?.flash;
-      if (flash !== undefined && !seenPlaybackFlash.has(playback)) {
-        seenPlaybackFlash.add(playback);
-        sent.push(osc.send(`/pb/${playback}/flash`, [Number(flash) > 0 ? 1 : 0], options));
-      }
-      continue;
-    }
-
-    if (target.type === 'magicq-10scene') {
-      const level = mappedFaderLevel(mapping);
-      const key = `${target.item || 1}/${target.zone || 1}`;
-      if (level !== undefined && !seenTenScene.has(key)) {
-        seenTenScene.add(key);
-        sent.push(sendTenSceneLevel(target, level, options));
-      }
-      continue;
-    }
-
-    if (target.type === 'magicq-dbo' && config.state?.dboActive !== undefined) {
-      sent.push(osc.send('/dbo', [config.state.dboActive ? 1 : 0], options));
-    }
-  }
-
-  lastOscStateResend = {
-    enabled: settings.enabled,
-    intervalMs: settings.intervalMs,
-    reason,
-    sent: sent.filter(Boolean).length,
-    at: new Date().toISOString()
-  };
-  return lastOscStateResend;
-}
-
-function mappedFaderLevel(mapping) {
-  if (mapping?.source?.type !== 'fader') return undefined;
-  const fader = config.state?.faders?.[mapping.source.cc];
-  return fader && fader.level !== undefined ? fader.level : undefined;
-}
-
-function sendExecutorLevel(target, level, options = {}) {
-  if (!Number.isFinite(Number(target.page)) || !Number.isFinite(Number(target.executor))) return null;
-  return osc.send(`/exec/${target.page}/${target.executor}`, [percentToFloat(level)], options);
-}
-
-function sendPlaybackLevel(playback, level, options = {}) {
-  return osc.send(`/pb/${playback}`, [clampPercent(level)], options);
-}
-
-function sendTenSceneLevel(target, level, options = {}) {
-  return osc.send(`/10scene/${target.item || 1}/${target.zone || 1}`, [percentToFloat(level)], options);
-}
-
 async function startNetworkBackup() {
   if (networkBackupApplying) return;
   networkBackupApplying = true;
@@ -1049,7 +846,7 @@ async function startNetworkBackup() {
     if (networkStatus?.lastBackupApply && !networkStatus.lastBackupApply.ok) {
       reportError(new Error(networkStatus.lastBackupApply.errors.join('; ')), 'network-backup');
     }
-    queueStatusBroadcast();
+    broadcast('status', status());
   } catch (error) {
     reportError(error, 'network-backup');
   } finally {
@@ -1101,15 +898,11 @@ function saveFaderValue(controller, midiValue, level, mapping) {
     }
   };
 
-  scheduleStateWrite();
-}
-
-function scheduleStateWrite(delayMs = 300) {
   if (pendingConfigWrite) clearTimeout(pendingConfigWrite);
   pendingConfigWrite = setTimeout(() => {
     pendingConfigWrite = null;
-    writeState(config.state);
-  }, delayMs);
+    config.state = writeState(config.state);
+  }, 300);
 }
 
 function sendPressMapping(mapping, event) {
@@ -1192,7 +985,6 @@ function resolveExecutorPressLevel(target) {
 
 function setExecutorState(target, level, source = 'local') {
   if (source !== 'osc' && !localStateUpdatesEnabled()) return false;
-  if (!Number.isFinite(Number(target.page)) || !Number.isFinite(Number(target.executor))) return false;
   const key = `${target.page}/${target.executor}`;
   const nextLevel = clampPercent(level);
   executorState[key] = {
@@ -1246,19 +1038,19 @@ function updateFromOscFeedback(data) {
     setExecutorState(target, oscLevelToPercent(firstArg), 'osc');
     refreshMappingsForTarget('magicq-executor-button', target);
     refreshMappingsForTarget('magicq-executor-fader', target);
-    queueStatusBroadcast();
+    broadcast('status', status());
     return;
   }
 
   if (playbackMatch) {
     setPlaybackLevel(Number(playbackMatch[1]), oscLevelToPercent(firstArg), 'osc');
-    queueStatusBroadcast();
+    broadcast('status', status());
     return;
   }
 
   if (playbackFlashMatch) {
     setPlaybackFlash(Number(playbackFlashMatch[1]), firstArg, 'osc');
-    queueStatusBroadcast();
+    broadcast('status', status());
   }
 }
 
@@ -1276,25 +1068,6 @@ function clampPercent(value) {
   const number = Number(value);
   if (!Number.isFinite(number)) return 0;
   return Math.max(0, Math.min(100, number));
-}
-
-function percentToFloat(value) {
-  return { type: 'f', value: clampPercent(value) / 100 };
-}
-
-function hydrateRuntimeState(state = {}, options = {}) {
-  delete state.executorState;
-  delete state.playbackState;
-  delete state.dboActive;
-  if (options.reset) {
-    replaceObject(executorState, {});
-    replaceObject(playbackState, {});
-  }
-}
-
-function replaceObject(target, source) {
-  for (const key of Object.keys(target)) delete target[key];
-  Object.assign(target, source || {});
 }
 
 function applyLocalAction(mapping) {

@@ -117,16 +117,14 @@ const defaultConfig = {
     feedbackIntervalMs: 5000
   },
   feedback: {
-    localStateUpdates: true,
-    resendStatesEnabled: false,
-    resendStatesIntervalMs: 10000
+    localStateUpdates: true
   },
   midi: {
     input: '',
     output: '',
-    watchIntervalMs: 3000,
+    watchIntervalMs: 1500,
     reconnectIntervalMs: 2000,
-    deviceCacheTtlMs: 5000
+    deviceCacheTtlMs: 1000
   },
   network: {
     interface: 'eth0',
@@ -146,7 +144,7 @@ const defaultConfig = {
   },
   apc: APC_DEFAULTS,
   ui: {
-    recentEventLimit: 30
+    recentEventLimit: 80
   },
   state: {
     faders: {},
@@ -212,7 +210,7 @@ function readState() {
   }
 
   try {
-    return persistentState(JSON.parse(fs.readFileSync(STATE_PATH, 'utf8')));
+    return deepMerge({ faders: {}, currentPage: 1 }, JSON.parse(fs.readFileSync(STATE_PATH, 'utf8')));
   } catch (error) {
     return { faders: {}, currentPage: 1 };
   }
@@ -220,17 +218,9 @@ function readState() {
 
 function writeState(state) {
   fs.mkdirSync(DATA_DIR, { recursive: true });
-  const nextState = persistentState(state);
+  const nextState = deepMerge({ faders: {}, currentPage: 1 }, state || {});
   fs.writeFileSync(STATE_PATH, `${JSON.stringify(nextState, null, 2)}\n`, 'utf8');
   return nextState;
-}
-
-function persistentState(state = {}) {
-  const merged = deepMerge({ faders: {}, currentPage: 1 }, state || {});
-  return {
-    faders: merged.faders || {},
-    currentPage: merged.currentPage || 1
-  };
 }
 
 function normalizeConfig(config) {
@@ -254,13 +244,9 @@ function normalizeConfig(config) {
   };
   next.feedback = {
     localStateUpdates: true,
-    resendStatesEnabled: false,
-    resendStatesIntervalMs: 10000,
     ...(next.feedback || {})
   };
   next.feedback.localStateUpdates = next.feedback.localStateUpdates !== false;
-  next.feedback.resendStatesEnabled = next.feedback.resendStatesEnabled === true;
-  next.feedback.resendStatesIntervalMs = Math.max(5000, Number(next.feedback.resendStatesIntervalMs || 10000));
   next.apc.shiftBehavior.blockedShiftSources = normalizeBlockedShiftSources(next.apc.shiftBehavior.blockedShiftSources);
   const recoverDelays = Array.isArray(next.apc.shiftBehavior.recoverDelaysMs)
     ? next.apc.shiftBehavior.recoverDelaysMs.map((value) => Math.max(0, Number(value) || 0))
@@ -268,10 +254,6 @@ function normalizeConfig(config) {
   next.apc.shiftBehavior.recoverDelaysMs = recoverDelays.some((delay) => delay === 0)
     ? recoverDelays
     : [0, ...recoverDelays];
-
-  next.midi.watchIntervalMs = Math.max(3000, Number(next.midi.watchIntervalMs || 3000));
-  next.midi.reconnectIntervalMs = Math.max(2000, Number(next.midi.reconnectIntervalMs || 2000));
-  next.midi.deviceCacheTtlMs = Math.max(5000, Number(next.midi.deviceCacheTtlMs || 5000));
 
   next.mappings = (next.mappings || [])
     .map((mapping) => migrateMapping(mapping))

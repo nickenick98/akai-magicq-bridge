@@ -72,8 +72,6 @@ Die OSC-Ziele sind bewusst einfach gehalten und koennen in `server/osc.js` an da
 - Executor Button: `/exec/{page}/{executor}`
 - Executor Fader: `/exec/{page}/{executor}/level`
 
-Unter `Verbindung` kann `OSC States zyklisch senden` aktiviert werden. Dann sendet die Bridge alle eingestellten Sekunden die zuletzt bekannten Executor-, Playback-, DBO- und Fader-Zustaende erneut an MagicQ. Das hilft, wenn ein einzelner UDP/OSC-Befehl unterwegs verloren geht. Der Button `OSC Sync jetzt` sendet dieselben gespeicherten Zustaende sofort.
-
 ## Raspberry Pi systemd
 
 Eine Beispiel-Service-Datei liegt unter `systemd/akai-magicq-bridge.service`.
@@ -106,8 +104,6 @@ sudo reboot
 ```
 
 Das Optimierungs-Skript schaltet standardmaessig Bluetooth, Avahi, Triggerhappy, ModemManager und `NetworkManager-wait-online` ab und startet den Bridge-Service schon nach `network.target`.
-WLAN bleibt unveraendert, ausser `DISABLE_WIFI=1` wird explizit gesetzt. Falls ein Pi nach Optimierungen nur noch ueber die Backup-IP erreichbar ist, setzt `./scripts/optimize-raspi.sh --restore-network` `eth0` wieder auf DHCP/Autoconnect. WLAN bleibt dabei aus/unveraendert.
-Mit `./scripts/optimize-raspi.sh --restore-all` werden die Optimierungen wieder zurueckgesetzt; mit `KEEP_WIFI_DISABLED=1` bleibt WLAN dabei ausgeschaltet.
 
 Raspberry Pi OS Bookworm nutzt standardmaessig NetworkManager. Die Bridge erwartet Node.js 20 oder neuer.
 

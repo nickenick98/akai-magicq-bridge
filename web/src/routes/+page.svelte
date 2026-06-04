@@ -104,6 +104,8 @@
   let ws = null;
   let wsState = 'offline';
   let pollTimer = null;
+  let ledClockTimer = null;
+  let ledClock = Date.now();
 
   let activeLayer = 'normal';
   let previewState = 'live';
@@ -146,52 +148,29 @@
   $: bulkApplyEnabled = selection.length > 0 && (bulkTargetEnabled || bulkLedEnabled || (quickMapEnabled && quickMapCanSave));
 
   onMount(async () => {
-    if (typeof window.__akaiBridgeHideFallback === 'function') {
-      window.__akaiBridgeHideFallback();
-    }
-    loadInitial();
+    await loadInitial();
     connectWs();
-    pollTimer = setInterval(pollStatus, 5000);
+    pollTimer = setInterval(pollStatus, 500);
+    ledClockTimer = setInterval(() => {
+      ledClock = Date.now();
+    }, 40);
   });
 
   onDestroy(() => {
     if (pollTimer) clearInterval(pollTimer);
+    if (ledClockTimer) clearInterval(ledClockTimer);
     if (ws) ws.close();
   });
 
   async function loadInitial() {
-    try {
-      const configResponse = await fetch('/api/config', { cache: 'no-store' });
-      config = await configResponse.json();
-      bumpView();
-    } catch (err) {
-      error = `/api/config: ${err.message}`;
-      return;
-    }
-
-    loadStatusSoon();
-    loadDevicesSoon();
-  }
-
-  async function loadStatusSoon() {
-    try {
-      const statusResponse = await fetch('/api/status', { cache: 'no-store' });
-      if (statusResponse.ok) applyStatus(await statusResponse.json());
-    } catch {
-      // WebSocket updates will fill the status once the backend is reachable.
-    }
-  }
-
-  async function loadDevicesSoon() {
-    try {
-      const devicesResponse = await fetch('/api/midi/devices', { cache: 'no-store' });
-      if (devicesResponse.ok) {
-        devices = await devicesResponse.json();
-        bumpView();
-      }
-    } catch {
-      // Device refresh is also available through the MIDI selectors/reconnect.
-    }
+    const [configResponse, devicesResponse, statusResponse] = await Promise.all([
+      fetch('/api/config'),
+      fetch('/api/midi/devices'),
+      fetch('/api/status')
+    ]);
+    config = await configResponse.json();
+    devices = await devicesResponse.json();
+    applyStatus(await statusResponse.json());
   }
 
   function connectWs() {
@@ -225,13 +204,12 @@
     if (type === 'midi-event') applyMidi(data);
     if (type === 'live-input') applyLiveInput(data);
     if (type === 'page-changed') applyPage(data);
-    if (type === 'osc-sent') recent = { ...recent, oscSent: [data, ...(recent.oscSent || [])].slice(0, 30) };
-    if (type === 'osc-received') recent = { ...recent, oscReceived: [data, ...(recent.oscReceived || [])].slice(0, 30) };
-    if (type === 'error') recent = { ...recent, errors: [data, ...(recent.errors || [])].slice(0, 30) };
+    if (type === 'osc-sent') recent = { ...recent, oscSent: [data, ...(recent.oscSent || [])].slice(0, 80) };
+    if (type === 'osc-received') recent = { ...recent, oscReceived: [data, ...(recent.oscReceived || [])].slice(0, 80) };
+    if (type === 'error') recent = { ...recent, errors: [data, ...(recent.errors || [])].slice(0, 80) };
   }
 
   async function pollStatus() {
-    if (wsState === 'online') return;
     try {
       const response = await fetch('/api/status', { cache: 'no-store' });
       if (response.ok) applyStatus(await response.json());
@@ -252,19 +230,10 @@
         }
       }
     };
-    if (data.recent) recent = trimRecent(data.recent);
+    if (data.recent) recent = data.recent;
     if (data.liveInput) applyLiveInput(data.liveInput, false);
     if (data.midi?.shiftActive) activeLayer = 'shift';
     bumpView();
-  }
-
-  function trimRecent(data) {
-    return {
-      midi: (data.midi || []).slice(0, 30),
-      oscSent: (data.oscSent || []).slice(0, 30),
-      oscReceived: (data.oscReceived || []).slice(0, 30),
-      errors: (data.errors || []).slice(0, 30)
-    };
   }
 
   function applyLiveInput(data, updateLast = true) {
@@ -288,7 +257,7 @@
   function applyMidi(event, pushRecent = true) {
     if (!event) return;
     live = { ...live, last: event };
-    if (pushRecent) recent = { ...recent, midi: [event, ...(recent.midi || [])].slice(0, 30) };
+    if (pushRecent) recent = { ...recent, midi: [event, ...(recent.midi || [])].slice(0, 80) };
 
     if (event.event === 'cc') {
       const nextCcs = {
@@ -552,10 +521,25 @@
     };
   }
 
-  function styleFor(type, value) {
+  function styleFor(type, value, clock = ledClock) {
     const state = ledState(type, value);
     const color = hardwareColor(type, state.color);
-    return `--control-color:${color};--control-text:${textColor(state.color)};--effect-color:${color};`;
+    const phase = syncedLedPhase(state.mode, clock);
+    return `--control-color:${color};--control-text:${textColor(state.color)};--effect-color:${color};--blink-color:${phase.blinkOn ? color : '#050706'};--blink-brightness:${phase.blinkBrightness};--pulse-brightness:${phase.pulseBrightness};--pulse-shadow-size:${phase.pulseShadowSize};`;
+  }
+
+  function syncedLedPhase(mode, clock) {
+    const blinkOn = mode !== 'blink' || Math.floor(clock / 250) % 2 === 0;
+    const pulseCycle = (clock % 1000) / 1000;
+    const pulseWave = (Math.sin(pulseCycle * Math.PI * 2 - Math.PI / 2) + 1) / 2;
+    const pulseLevel = pulseWave * pulseWave * (3 - 2 * pulseWave);
+    const pulseBrightness = mode === 'pulse' ? (0.22 + 1.08 * pulseLevel).toFixed(3) : '1';
+    return {
+      blinkOn,
+      blinkBrightness: blinkOn ? '1.18' : '1',
+      pulseBrightness,
+      pulseShadowSize: mode === 'pulse' ? `${(3 + 20 * pulseLevel).toFixed(1)}px` : '0px'
+    };
   }
 
   function modeClass(type, value) {
@@ -1023,12 +1007,6 @@
     bumpView();
   }
 
-  async function resendOscStates() {
-    const result = await (await api('/api/osc/resend', { method: 'POST' })).json();
-    notice = `OSC States gesendet: ${result.sent || 0}`;
-    bumpView();
-  }
-
   async function saveNetwork() {
     config.network.backup.enabled = true;
     config.network.backup.applyOnStart = true;
@@ -1125,25 +1103,6 @@
     bumpView();
   }
 
-  function setFeedbackOption(key, value) {
-    config = {
-      ...config,
-      feedback: {
-        localStateUpdates: true,
-        resendStatesEnabled: false,
-        resendStatesIntervalMs: 5000,
-        ...(config.feedback || {}),
-        [key]: value
-      }
-    };
-    bumpView();
-  }
-
-  function setResendIntervalSeconds(value) {
-    const seconds = Math.max(5, Number(value) || 5);
-    setFeedbackOption('resendStatesIntervalMs', Math.round(seconds * 1000));
-  }
-
   function localStateUpdatesEnabled() {
     return config?.feedback?.localStateUpdates !== false;
   }
@@ -1206,7 +1165,6 @@
         <div class="actions">
           <button on:click={saveConnection}>Speichern</button>
           <button class="secondary" on:click={reconnect}>Neu verbinden</button>
-          <button class="secondary" on:click={resendOscStates}>OSC Sync jetzt</button>
         </div>
       </div>
       <div class="fields">
@@ -1266,24 +1224,6 @@
             on:change={(event) => setLocalStateUpdates(event.currentTarget.checked)}
           />
           <span>Interne Statushaltung erlauben</span>
-        </label>
-        <label class="checkbox-row">
-          <input
-            type="checkbox"
-            checked={config.feedback?.resendStatesEnabled === true}
-            on:change={(event) => setFeedbackOption('resendStatesEnabled', event.currentTarget.checked)}
-          />
-          <span>OSC States zyklisch senden</span>
-        </label>
-        <label>
-          <span>State Resync alle Sekunden</span>
-          <input
-            type="number"
-            min="5"
-            step="1"
-            value={Math.round((config.feedback?.resendStatesIntervalMs || 10000) / 1000)}
-            on:input={(event) => setResendIntervalSeconds(event.currentTarget.value)}
-          />
         </label>
       </div>
     </section>
@@ -1392,31 +1332,31 @@
         <div class="controller">
           <div class="matrix">
             {#each matrixDisplay as note}
-              <button class:active={activeFor('pad', note, mappingFor('pad', note), viewRevision)} class:selected={selected?.type === 'pad' && selected.value === note} class:bulk={isSelectedBulk('pad', note)} class={modeClass('pad', note, viewRevision)} style={styleFor('pad', note)} on:click={() => selectElement('pad', note)} title={`Pad ${note}`}>
+              <button class:active={activeFor('pad', note, mappingFor('pad', note), viewRevision)} class:selected={selected?.type === 'pad' && selected.value === note} class:bulk={isSelectedBulk('pad', note)} class={modeClass('pad', note, viewRevision)} style={styleFor('pad', note, ledClock)} on:click={() => selectElement('pad', note)} title={`Pad ${note}`}>
                 <span class="main">{note}</span><span class="readout">{readout('pad', note, viewRevision)}</span>
               </button>
             {/each}
           </div>
           <div class="scenes">
             {#each scenes as note, index}
-              <button class:active={activeFor('scene', note, mappingFor('scene', note), viewRevision)} class:selected={selected?.type === 'scene' && selected.value === note} class:bulk={isSelectedBulk('scene', note)} class={modeClass('scene', note, viewRevision)} style={styleFor('scene', note)} on:click={() => selectElement('scene', note)}>
+              <button class:active={activeFor('scene', note, mappingFor('scene', note), viewRevision)} class:selected={selected?.type === 'scene' && selected.value === note} class:bulk={isSelectedBulk('scene', note)} class={modeClass('scene', note, viewRevision)} style={styleFor('scene', note, ledClock)} on:click={() => selectElement('scene', note)}>
                 <span class="main">S{index + 1}</span><span class="readout">{readout('scene', note, viewRevision)}</span>
               </button>
             {/each}
           </div>
           <div class="controls">
             {#each controls as note, index}
-              <button class:active={activeFor('control', note, mappingFor('control', note), viewRevision)} class:selected={selected?.type === 'control' && selected.value === note} class:bulk={isSelectedBulk('control', note)} class={modeClass('control', note, viewRevision)} style={styleFor('control', note)} on:click={() => selectElement('control', note)}>
+              <button class:active={activeFor('control', note, mappingFor('control', note), viewRevision)} class:selected={selected?.type === 'control' && selected.value === note} class:bulk={isSelectedBulk('control', note)} class={modeClass('control', note, viewRevision)} style={styleFor('control', note, ledClock)} on:click={() => selectElement('control', note)}>
                 <span class="main">C{index + 1}</span><span class="readout">{readout('control', note, viewRevision)}</span>
               </button>
             {/each}
-            <button class:active={status.midi?.shiftActive} class:selected={selected?.type === 'shift'} class:bulk={isSelectedBulk('shift', shiftNote)} class={modeClass('shift', shiftNote, viewRevision)} style={styleFor('shift', shiftNote)} on:click={() => selectElement('shift', shiftNote)}>
+            <button class:active={status.midi?.shiftActive} class:selected={selected?.type === 'shift'} class:bulk={isSelectedBulk('shift', shiftNote)} class={modeClass('shift', shiftNote, viewRevision)} style={styleFor('shift', shiftNote, ledClock)} on:click={() => selectElement('shift', shiftNote)}>
               <span class="main">Shift</span><span class="readout">{readout('shift', shiftNote, viewRevision)}</span>
             </button>
           </div>
           <div class="faders">
             {#each faders as cc, index}
-              <button class:active={activeFor('fader', cc, mappingFor('fader', cc), viewRevision)} class:selected={selected?.type === 'fader' && selected.value === cc} class:bulk={isSelectedBulk('fader', cc)} class={modeClass('fader', cc, viewRevision)} style={styleFor('fader', cc)} on:click={() => selectElement('fader', cc)}>
+              <button class:active={activeFor('fader', cc, mappingFor('fader', cc), viewRevision)} class:selected={selected?.type === 'fader' && selected.value === cc} class:bulk={isSelectedBulk('fader', cc)} class={modeClass('fader', cc, viewRevision)} style={styleFor('fader', cc, ledClock)} on:click={() => selectElement('fader', cc)}>
                 <span class="fader-value">{faderRaw(cc, viewRevision)}</span><small>{faderLevel(cc, viewRevision)}%</small><span class="main">F{index + 1}</span><span class="readout">{readout('fader', cc, viewRevision)}</span>
               </button>
             {/each}
@@ -1806,8 +1746,8 @@
   button.active { filter: brightness(1.25) saturate(1.2); box-shadow: 0 0 18px var(--effect-color), inset 0 -10px 18px rgba(0,0,0,.22); }
   button.selected { outline: 4px solid #fff; outline-offset: 2px; }
   button.bulk { outline: 3px solid #b8f36d; outline-offset: 2px; }
-  button.mode-blink { background: var(--effect-color) !important; animation: led-blink 500ms steps(1, end) infinite; }
-  button.mode-pulse { background: var(--effect-color) !important; animation: led-pulse 1000ms ease-in-out infinite; }
+  button.mode-blink { background: var(--blink-color) !important; filter: brightness(var(--blink-brightness)) !important; }
+  button.mode-pulse { background: var(--effect-color) !important; filter: brightness(var(--pulse-brightness)) saturate(1.18) !important; box-shadow: 0 0 var(--pulse-shadow-size) var(--effect-color), inset 0 -10px 18px rgba(0,0,0,.22) !important; }
   .mode-off { background: #232c25 !important; color: #aebdae !important; }
   .editor { display: grid; align-content: start; gap: 12px; }
   .bulk-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
@@ -1825,15 +1765,6 @@
   .notice { color: #9ff0b7; }
   .monitor-grid { display: grid; grid-template-columns: repeat(4, minmax(180px, 1fr)); gap: 12px; }
   .loading { min-height: 220px; display: grid; place-items: center; color: #aebdae; }
-  @keyframes led-blink {
-    0%, 49.9% { background: var(--effect-color); filter: brightness(1.18) saturate(1.12); }
-    50%, 100% { background: #050706; filter: brightness(1); box-shadow: inset 0 -10px 18px rgba(0,0,0,.22); }
-  }
-  @keyframes led-pulse {
-    0%, 100% { filter: brightness(.22) saturate(1.05); box-shadow: 0 0 3px var(--effect-color), inset 0 -10px 18px rgba(0,0,0,.22); }
-    50% { filter: brightness(1.3) saturate(1.18); box-shadow: 0 0 22px var(--effect-color), inset 0 -10px 18px rgba(0,0,0,.22); }
-  }
   @media (max-width: 1120px) { .workspace, .connection .fields, .network-fields, .ip-list, .live-strip, .monitor-grid { grid-template-columns: 1fr; } }
-  @media (max-width: 820px) { main { width: calc(100vw - 18px); } .topbar { align-items: flex-start; flex-direction: column; } .controller { grid-template-columns: 1fr; grid-template-areas: 'matrix' 'scenes' 'controls' 'faders'; } .scenes, .controls, .faders, .bulk-options { grid-template-columns: repeat(4, minmax(0, 1fr)); } .bulk-options { grid-template-columns: 1fr; } .readout { font-size: 8px; } }
-  @media (max-width: 520px) { section { padding: 12px; } .matrix { gap: 5px; } .scenes, .controls, .faders { gap: 5px; grid-template-columns: repeat(3, minmax(0, 1fr)); } .main { font-size: 12px; } .readout { display: none; } }
+  @media (max-width: 720px) { main { width: calc(100vw - 18px); } .topbar { align-items: flex-start; flex-direction: column; } .controller { grid-template-columns: 1fr; grid-template-areas: 'matrix' 'scenes' 'controls' 'faders'; } .matrix, .scenes, .controls, .faders, .bulk-options { grid-template-columns: repeat(4, minmax(0, 1fr)); } .bulk-options { grid-template-columns: 1fr; } }
 </style>
