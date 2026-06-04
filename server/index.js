@@ -17,6 +17,7 @@ let pendingConfigWrite = null;
 let ledRefreshTimer = null;
 let midiWatchTimer = null;
 let networkBackupTimer = null;
+let oscResyncTimer = null;
 let ledRecoveryTimers = new Set();
 let lastMidiDeviceSignature = '';
 let lastMidiReconnectAttemptAt = 0;
@@ -25,6 +26,7 @@ let lastShiftGuardReportAt = 0;
 let networkBackupApplying = false;
 let lastNetworkApply = null;
 let lastNetworkBackupApply = null;
+let lastOscResync = null;
 
 const app = express();
 const server = http.createServer(app);
@@ -89,6 +91,7 @@ function status() {
     state: config.state || { faders: {}, currentPage: 1 },
     executorState,
     playbackState,
+    oscResync: oscResyncStatus(),
     liveInput: liveInputState
   };
 }
@@ -331,6 +334,7 @@ app.post('/api/config', (req, res) => {
   led.setApcLayout(config.apc);
   reconnect();
   startNetworkBackupTimer();
+  startOscResyncTimer();
   res.json(config);
 });
 
@@ -346,6 +350,7 @@ app.post('/api/backup/restore', (req, res) => {
     led.setApcLayout(config.apc);
     reconnect();
     startNetworkBackupTimer();
+    startOscResyncTimer();
     res.json({ ok: true, config, state: config.state });
   } catch (error) {
     reportError(error, 'backup');
@@ -431,6 +436,17 @@ app.post('/api/osc/test', (req, res) => {
     res.json({ ok: true, sent });
   } catch (error) {
     reportError(error, 'osc');
+    res.status(500).json({ ok: false, error: error.message });
+  }
+});
+
+app.post('/api/osc/resync', (req, res) => {
+  try {
+    const result = resyncMappedOscStates('manual');
+    broadcast('status', status());
+    res.json({ ok: true, ...result });
+  } catch (error) {
+    reportError(error, 'osc-resync');
     res.status(500).json({ ok: false, error: error.message });
   }
 });
@@ -539,6 +555,7 @@ reconnect();
 startLedRefreshTimer();
 startMidiWatchTimer();
 startNetworkBackupTimer();
+startOscResyncTimer();
 
 const port = Number(process.env.PORT || config.server.port || 3001);
 const host = config.server.host || '0.0.0.0';
@@ -564,6 +581,10 @@ function shutdown(signal = 'SIGTERM') {
   if (networkBackupTimer) {
     clearInterval(networkBackupTimer);
     networkBackupTimer = null;
+  }
+  if (oscResyncTimer) {
+    clearInterval(oscResyncTimer);
+    oscResyncTimer = null;
   }
   for (const timer of ledRecoveryTimers) {
     clearTimeout(timer);
@@ -837,6 +858,154 @@ function startNetworkBackupTimer() {
   networkBackupTimer = setInterval(startNetworkBackup, interval);
 }
 
+function startOscResyncTimer() {
+  if (oscResyncTimer) {
+    clearInterval(oscResyncTimer);
+    oscResyncTimer = null;
+  }
+
+  const settings = oscResyncSettings();
+  lastOscResync = {
+    ...(lastOscResync || {}),
+    enabled: settings.enabled,
+    intervalMs: settings.intervalMs
+  };
+
+  if (!settings.enabled) return;
+
+  oscResyncTimer = setInterval(() => {
+    try {
+      resyncMappedOscStates('timer');
+    } catch (error) {
+      reportError(error, 'osc-resync');
+    }
+  }, settings.intervalMs);
+  oscResyncTimer.unref?.();
+}
+
+function oscResyncSettings() {
+  return {
+    enabled: config.feedback?.oscResyncEnabled === true,
+    intervalMs: Math.max(5000, Number(config.feedback?.oscResyncIntervalMs || 10000))
+  };
+}
+
+function oscResyncStatus() {
+  const settings = oscResyncSettings();
+  return {
+    enabled: settings.enabled,
+    intervalMs: settings.intervalMs,
+    ...(lastOscResync || {})
+  };
+}
+
+function resyncMappedOscStates(reason = 'timer') {
+  const settings = oscResyncSettings();
+  if (reason !== 'manual' && !settings.enabled) {
+    lastOscResync = {
+      enabled: settings.enabled,
+      intervalMs: settings.intervalMs,
+      reason,
+      sent: 0,
+      skipped: true,
+      skipReason: 'disabled',
+      at: new Date().toISOString()
+    };
+    return lastOscResync;
+  }
+
+  if (!osc.getStatus().ready) {
+    lastOscResync = {
+      enabled: settings.enabled,
+      intervalMs: settings.intervalMs,
+      reason,
+      sent: 0,
+      skipped: true,
+      skipReason: 'osc-not-ready',
+      at: new Date().toISOString()
+    };
+    return lastOscResync;
+  }
+
+  const silent = reason !== 'manual';
+  const sent = [];
+  const seen = new Set();
+
+  for (const mapping of config.mappings || []) {
+    const target = mapping.target || {};
+    if (!target.type || target.type === 'disabled') continue;
+
+    if (target.type === 'magicq-executor-fader') {
+      if (!hasExecutorAddress(target)) continue;
+      const level = mappedFaderLevel(mapping);
+      if (level !== undefined) sendUniqueOsc(seen, sent, `/exec/${target.page}/${target.executor}`, [percentToFloat(level)], { silent });
+      continue;
+    }
+
+    if (target.type === 'magicq-executor-button' || target.type === 'magicq-executor-adjust') {
+      if (!hasExecutorAddress(target)) continue;
+      const key = `${target.page}/${target.executor}`;
+      const state = executorState[key];
+      if (state?.level !== undefined) sendUniqueOsc(seen, sent, `/exec/${target.page}/${target.executor}`, [percentToFloat(state.level)], { silent });
+      continue;
+    }
+
+    if (target.type === 'magicq-playback-level' || target.type === 'magicq-playback-adjust') {
+      const playback = target.playback || target.executor || 1;
+      const level = mappedFaderLevel(mapping) ?? playbackState[playback]?.level;
+      if (level !== undefined) sendUniqueOsc(seen, sent, `/pb/${playback}`, [clampPercent(level)], { silent });
+      continue;
+    }
+
+    if (target.type === 'magicq-playback-flash') {
+      const playback = target.playback || 1;
+      const flash = playbackState[playback]?.flash;
+      if (flash !== undefined) sendUniqueOsc(seen, sent, `/pb/${playback}/flash`, [Number(flash) > 0 ? 1 : 0], { silent });
+      continue;
+    }
+
+    if (target.type === 'magicq-10scene') {
+      const level = mappedFaderLevel(mapping);
+      if (level !== undefined) {
+        sendUniqueOsc(seen, sent, `/10scene/${target.item || 1}/${target.zone || 1}`, [percentToFloat(level)], { silent });
+      }
+      continue;
+    }
+
+    if (target.type === 'magicq-dbo' && config.state?.dboActive !== undefined) {
+      sendUniqueOsc(seen, sent, '/dbo', [config.state.dboActive ? 1 : 0], { silent });
+    }
+  }
+
+  lastOscResync = {
+    enabled: settings.enabled,
+    intervalMs: settings.intervalMs,
+    reason,
+    sent: sent.filter(Boolean).length,
+    skipped: false,
+    at: new Date().toISOString()
+  };
+  return lastOscResync;
+}
+
+function sendUniqueOsc(seen, sent, address, args, options = {}) {
+  if (seen.has(address)) return null;
+  seen.add(address);
+  const result = osc.send(address, args, options);
+  sent.push(result);
+  return result;
+}
+
+function mappedFaderLevel(mapping) {
+  if (mapping?.source?.type !== 'fader') return undefined;
+  const fader = config.state?.faders?.[mapping.source.cc];
+  return fader?.level;
+}
+
+function hasExecutorAddress(target) {
+  return Number.isFinite(Number(target?.page)) && Number.isFinite(Number(target?.executor));
+}
+
 async function startNetworkBackup() {
   if (networkBackupApplying) return;
   networkBackupApplying = true;
@@ -1068,6 +1237,10 @@ function clampPercent(value) {
   const number = Number(value);
   if (!Number.isFinite(number)) return 0;
   return Math.max(0, Math.min(100, number));
+}
+
+function percentToFloat(value) {
+  return { type: 'f', value: clampPercent(value) / 100 };
 }
 
 function applyLocalAction(mapping) {

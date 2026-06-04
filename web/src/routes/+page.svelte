@@ -1103,8 +1103,39 @@
     bumpView();
   }
 
+  function setOscResyncEnabled(value) {
+    config = {
+      ...config,
+      feedback: {
+        ...(config.feedback || {}),
+        oscResyncEnabled: value
+      }
+    };
+    bumpView();
+  }
+
+  function setOscResyncIntervalSeconds(value) {
+    const seconds = Math.max(5, Number(value) || 10);
+    config = {
+      ...config,
+      feedback: {
+        ...(config.feedback || {}),
+        oscResyncIntervalMs: Math.round(seconds * 1000)
+      }
+    };
+    bumpView();
+  }
+
   function localStateUpdatesEnabled() {
     return config?.feedback?.localStateUpdates !== false;
+  }
+
+  async function resyncOscStates() {
+    const response = await api('/api/osc/resync', { method: 'POST' });
+    const result = await response.json();
+    status = { ...status, oscResync: result };
+    notice = result.skipped ? `OSC Resync uebersprungen: ${result.skipReason || result.reason}` : `OSC Resync gesendet: ${result.sent || 0}`;
+    bumpView();
   }
 
   async function saveMidiSelection() {
@@ -1155,6 +1186,7 @@
       <span class:ok={status.midi?.inputConnected} class="pill">MIDI In {status.midi?.inputConnected ? 'ok' : 'off'}</span>
       <span class:ok={status.midi?.outputConnected} class="pill">MIDI Out {status.midi?.outputConnected ? 'ok' : 'off'}</span>
       <span class:ok={status.osc?.ready} class="pill">OSC {status.osc?.ready ? 'ready' : 'off'}</span>
+      <span class:ok={status.oscResync?.enabled} class="pill">Resync {status.oscResync?.enabled ? `${Math.round((status.oscResync?.intervalMs || 0) / 1000)}s` : 'aus'}</span>
     </div>
   </header>
 
@@ -1165,6 +1197,7 @@
         <div class="actions">
           <button on:click={saveConnection}>Speichern</button>
           <button class="secondary" on:click={reconnect}>Neu verbinden</button>
+          <button class="secondary" on:click={resyncOscStates}>OSC Resync jetzt</button>
         </div>
       </div>
       <div class="fields">
@@ -1224,6 +1257,24 @@
             on:change={(event) => setLocalStateUpdates(event.currentTarget.checked)}
           />
           <span>Interne Statushaltung erlauben</span>
+        </label>
+        <label class="checkbox-row">
+          <input
+            type="checkbox"
+            checked={config.feedback?.oscResyncEnabled === true}
+            on:change={(event) => setOscResyncEnabled(event.currentTarget.checked)}
+          />
+          <span>OSC Resync zyklisch senden</span>
+        </label>
+        <label>
+          <span>OSC Resync alle Sekunden</span>
+          <input
+            type="number"
+            min="5"
+            step="1"
+            value={Math.round((config.feedback?.oscResyncIntervalMs || 10000) / 1000)}
+            on:input={(event) => setOscResyncIntervalSeconds(event.currentTarget.value)}
+          />
         </label>
       </div>
     </section>
