@@ -166,6 +166,7 @@
   $: canRunUpdate = canCheckUpdate && systemUpdate?.githubReachable === true && systemUpdate?.updateAvailable === true;
   $: systemUpdateHeaderLabel = systemUpdateLabel(systemUpdate);
   $: systemUpdateHeaderOk = systemUpdateOk(systemUpdate);
+  $: compactNetworkIps = compactInterfaceAddresses(status.network?.interfaces || []);
 
   onMount(async () => {
     await loadInitial();
@@ -1134,13 +1135,31 @@
     bumpView();
   }
 
-  function interfaceAddresses() {
-    return (status.network?.interfaces || []).flatMap((item) =>
+  function interfaceAddresses(interfaces = status.network?.interfaces || []) {
+    return interfaces.flatMap((item) =>
       (item.addresses || []).map((address) => ({
         name: item.name,
         ...address
       }))
     );
+  }
+
+  function compactInterfaceAddresses(interfaces = [], limit = 6) {
+    const addresses = interfaceAddresses(interfaces)
+      .filter((address) => address.name !== 'lo')
+      .filter((address) => address.family !== 'IPv6' || !String(address.address || '').toLowerCase().startsWith('fe80:'))
+      .sort((a, b) => {
+        if (a.family === b.family) return a.name.localeCompare(b.name);
+        return a.family === 'IPv4' ? -1 : 1;
+      });
+    return {
+      visible: addresses.slice(0, limit),
+      hidden: Math.max(0, addresses.length - limit)
+    };
+  }
+
+  function addressText(address) {
+    return address.cidr || address.address || '-';
   }
 
   function normalizeBackupAddress(value) {
@@ -1497,6 +1516,14 @@
           <span class:ok={status.network?.main?.present} class="pill">Haupt-IP {status.network?.main?.present ? 'aktiv' : 'fehlt'}</span>
         {/if}
         <span class="pill">Host {status.network?.hostname || '-'}</span>
+        {#each compactNetworkIps.visible as address}
+          <span class="pill ip-pill">{address.name} {addressText(address)}</span>
+        {:else}
+          <span class="pill">Keine IP</span>
+        {/each}
+        {#if compactNetworkIps.hidden}
+          <span class="pill">+{compactNetworkIps.hidden} weitere</span>
+        {/if}
       </div>
       <div class="fields network-fields">
         <label><span>Schnittstelle für beide IPs</span><input bind:value={config.network.interface} placeholder="eth0" /></label>
@@ -1953,6 +1980,7 @@
   .section-head { margin-bottom: 12px; }
   .pill { border: 1px solid #5a3a3a; color: #ffb8a8; border-radius: 999px; padding: 5px 9px; font-size: 12px; font-weight: 800; }
   .pill.ok { border-color: #49825c; color: #9ff0b7; }
+  .ip-pill { border-color: #354a56; color: #9fdfff; background: #10191d; max-width: 240px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .fields, .led-controls { display: grid; grid-template-columns: repeat(2, minmax(160px, 1fr)); gap: 12px; }
   .connection .fields { grid-template-columns: repeat(5, minmax(130px, 1fr)); }
   .connection-options { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(3, minmax(180px, max-content)) minmax(150px, 190px); gap: 8px; align-items: stretch; }
