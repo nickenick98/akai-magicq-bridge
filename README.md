@@ -95,6 +95,16 @@ sudo reboot
 
 Das Install-Skript bitte als normaler App-User ausfuehren, nicht mit `sudo`. Standard ist `APP_USER=akai`; bei einem anderen Raspberry-User kann `APP_USER=<user>` gesetzt werden.
 
+Optional nach erfolgreicher Installation fuer schnelleren Boot:
+
+```bash
+chmod +x scripts/optimize-raspi.sh
+./scripts/optimize-raspi.sh
+sudo reboot
+```
+
+Das Optimierungs-Skript schaltet standardmaessig Bluetooth, Avahi, Triggerhappy, ModemManager und `NetworkManager-wait-online` ab und startet den Bridge-Service schon nach `network.target`.
+
 Raspberry Pi OS Bookworm nutzt standardmaessig NetworkManager. Die Bridge erwartet Node.js 20 oder neuer.
 
 1. Systempakete installieren:

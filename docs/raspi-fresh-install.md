@@ -160,7 +160,50 @@ npm run build
 sudo systemctl restart akai-magicq-bridge
 ```
 
-## 10. Fehlerdiagnose
+## 10. Boot optimieren
+
+Nach erfolgreicher Installation kannst du unnoetige Dienste abschalten und den Bridge-Service frueher starten lassen:
+
+```bash
+cd /bridge/akai-magicq-bridge
+chmod +x scripts/optimize-raspi.sh
+./scripts/optimize-raspi.sh
+sudo reboot
+```
+
+Standardmaessig macht das Skript:
+
+- Bridge-Service wartet nur noch auf `network.target`, nicht auf `network-online.target`
+- `NetworkManager-wait-online.service` aus
+- Bluetooth aus
+- Avahi/mDNS aus
+- Triggerhappy aus
+- ModemManager aus
+- Journald-Groesse begrenzen
+- WLAN bleibt an
+- automatische apt-Timer bleiben an
+
+Wenn du Ethernet-only faehrst und WLAN sicher nicht brauchst:
+
+```bash
+DISABLE_WIFI=1 ./scripts/optimize-raspi.sh
+```
+
+Wenn du maximale Appliance-Startzeit willst und automatische apt-Laeufe nicht brauchst:
+
+```bash
+DISABLE_APT_TIMERS=1 ./scripts/optimize-raspi.sh
+```
+
+Zum Messen:
+
+```bash
+systemd-analyze
+systemd-analyze blame
+systemd-analyze critical-chain akai-magicq-bridge.service
+```
+
+## 11. Fehlerdiagnose
 
 Service:
 
