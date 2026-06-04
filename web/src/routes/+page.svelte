@@ -1333,9 +1333,11 @@
 
 <main>
   <header class="topbar">
-    <div>
-      <h1>APC MagicQ Bridge</h1>
-      <p>Live MIDI, OSC und LED Mapping</p>
+    <div class="brand-block">
+      <span class="eyebrow">AKAI APC Mini MK2</span>
+      <h1>MagicQ OSC Bridge</h1>
+      <p>Live-Steuerung für MIDI, OSC, Executor-Mapping, Faderwerte und LED-Feedback auf dem Controller.</p>
+      <span class="powered">Powered by Veranstaltungstechnik Löwe</span>
     </div>
     <div class="status-row">
       <span class:ok={wsState === 'online'} class="pill">WS {wsState}</span>
@@ -1887,7 +1889,6 @@
   {:else}
     <section class="loading">Lade Bridge...</section>
   {/if}
-  <footer class="brand-credit">Powered by Veranstaltungstechnik Löwe</footer>
 </main>
 
 {#snippet LedControls(led, onChange, sourceType)}
@@ -1919,13 +1920,15 @@
   :global(body) { margin: 0; background: #101412; color: #f3f7f1; font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
   main { width: min(1540px, calc(100vw - 28px)); margin: 0 auto; padding: 18px 0 36px; }
   .topbar, section { border: 1px solid #2d372f; background: #171d19; border-radius: 8px; }
-  .topbar { display: flex; justify-content: space-between; align-items: center; gap: 16px; padding: 16px 18px; margin-bottom: 14px; }
+  .topbar { display: flex; justify-content: space-between; align-items: center; gap: 18px; padding: 18px 20px; margin-bottom: 14px; }
   h1, h2, p { margin: 0; }
-  h1 { font-size: 23px; }
+  h1 { font-size: 28px; line-height: 1.05; }
   h2 { font-size: 17px; }
-  .topbar p, .empty { color: #9cac9d; }
+  .brand-block { display: grid; gap: 6px; max-width: 700px; }
+  .eyebrow { color: #9ff0b7; font-size: 12px; font-weight: 900; letter-spacing: 0.08em; text-transform: uppercase; }
+  .topbar p, .empty { color: #b5c3b7; }
+  .powered { color: #7f8d82; font-size: 12px; font-weight: 800; letter-spacing: 0; }
   section { padding: 16px; margin-bottom: 14px; }
-  .brand-credit { padding: 2px 4px 0; color: #7f8d82; font-size: 12px; font-weight: 800; letter-spacing: 0; text-align: right; }
   .section-head, .actions, .status-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
   .section-head { margin-bottom: 12px; }
   .pill { border: 1px solid #5a3a3a; color: #ffb8a8; border-radius: 999px; padding: 5px 9px; font-size: 12px; font-weight: 800; }
