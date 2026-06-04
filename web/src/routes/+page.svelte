@@ -123,7 +123,9 @@
   let bulkLed = { offColor: 5, offMode: 'solid', onColor: 21, activeMode: 'solid' };
   let bulkLedEnabled = false;
   let bulkTargetEnabled = false;
+  let bulkActionEnabled = false;
   let bulkTarget = { type: 'disabled', action: 'off' };
+  let bulkAction = { action: 'flash', value: 100 };
   let quickMap = { targetType: 'auto-executor', page: 1, start: 1, action: 'toggle', value: 100 };
 
   let live = {
@@ -147,7 +149,7 @@
   $: shiftNote = apc.shiftNote ?? 122;
   $: quickMapItems = quickMapSelection(selection, quickMap);
   $: quickMapCanSave = quickMapItems.length > 0;
-  $: bulkApplyEnabled = selection.length > 0 && (bulkTargetEnabled || bulkLedEnabled || (quickMapEnabled && quickMapCanSave));
+  $: bulkApplyEnabled = selection.length > 0 && (bulkTargetEnabled || bulkActionEnabled || bulkLedEnabled || (quickMapEnabled && quickMapCanSave));
 
   onMount(async () => {
     await loadInitial();
@@ -674,6 +676,7 @@
     selection = [];
     quickMapEnabled = false;
     bulkTargetEnabled = false;
+    bulkActionEnabled = false;
     bulkLedEnabled = false;
     selected = null;
     editor = null;
@@ -736,6 +739,10 @@
     bulkTarget = prepareTargetForType({ ...bulkTarget, type: value });
   }
 
+  function setBulkAction(key, value) {
+    bulkAction = { ...bulkAction, [key]: normalizeTargetValue(key, value) };
+  }
+
   function setQuickMap(key, value) {
     quickMap = { ...quickMap, [key]: key === 'action' || key === 'targetType' ? value : Math.max(1, Number(value) || 1) };
   }
@@ -780,8 +787,31 @@
     return targetTypeOptions.filter(([value]) => allowed.includes(value));
   }
 
+  function actionsForTargetType(type) {
+    if (type === 'magicq-executor-button') return executorActions;
+    if (type === 'magicq-playback-action') return playbackActions;
+    if (type === 'magicq-playback-flash') return flashActions;
+    if (type === 'magicq-dbo') return dboActions;
+    if (type === 'special') return specialActions;
+    return [];
+  }
+
+  function bulkActionOptions() {
+    const actionSets = selection
+      .map((item) => mappingFor(item.type, item.value, item.layer)?.target?.type)
+      .map((type) => actionsForTargetType(type))
+      .filter((actions) => actions.length);
+    if (!actionSets.length) return executorActions;
+    const allowed = actionSets.reduce((left, right) => left.filter((value) => right.includes(value)));
+    return allowed.length ? allowed : executorActions;
+  }
+
   $: if (bulkTargetEnabled && !bulkTargetOptions().some(([value]) => value === bulkTarget.type)) {
     bulkTarget = prepareTargetForType({ type: bulkTargetOptions()[0]?.[0] || 'disabled' });
+  }
+
+  $: if (bulkActionEnabled && !bulkActionOptions().includes(bulkAction.action)) {
+    bulkAction = { ...bulkAction, action: bulkActionOptions()[0] || 'flash' };
   }
 
   function targetTypeAllowed(sourceType, targetType) {
@@ -860,8 +890,8 @@
   }
 
   async function applyBulkEdit() {
-    if (!quickMapEnabled && !bulkTargetEnabled && !bulkLedEnabled) {
-      notice = 'Bitte Quick Mapping, Zieltyp oder Farbe/LED anhaken.';
+    if (!quickMapEnabled && !bulkTargetEnabled && !bulkActionEnabled && !bulkLedEnabled) {
+      notice = 'Bitte Quick Mapping, Zieltyp, Aktion/Modus oder Farbe/LED anhaken.';
       return;
     }
 
@@ -885,6 +915,15 @@
       if (quickMapEnabled && quickIndexByKey.has(item.key)) {
         mapping.target = prepareTargetForType({ ...(mapping.target || {}), ...quickMapTargetFor(item, quickIndexByKey.get(item.key), quickMap) });
         changedItem = true;
+      }
+
+      if (bulkActionEnabled) {
+        const allowedActions = actionsForTargetType(mapping.target?.type);
+        if (allowedActions.includes(bulkAction.action)) {
+          mapping.target = { ...(mapping.target || {}), action: bulkAction.action };
+          if (bulkAction.action === 'set-level') mapping.target.value = bulkAction.value;
+          changedItem = true;
+        }
       }
 
       if (bulkLedEnabled && item.type !== 'fader' && mapping.target.type !== 'disabled') {
@@ -1505,6 +1544,10 @@
               <span>Zieltyp mit aendern</span>
             </label>
             <label class="checkbox-row">
+              <input type="checkbox" bind:checked={bulkActionEnabled} />
+              <span>Aktion/Modus aendern</span>
+            </label>
+            <label class="checkbox-row">
               <input type="checkbox" bind:checked={bulkLedEnabled} />
               <span>Farbe/LED setzen</span>
             </label>
@@ -1639,6 +1682,27 @@
               {/if}
             </div>
           {/if}
+          {#if bulkActionEnabled}
+            <div class="quick-map">
+              <div class="quick-map-head">
+                <div>
+                  <strong>Aktion/Modus</strong>
+                  <span>Aendert nur die Aktion der vorhandenen Mappings, Zieltyp, Page, Executor und LEDs bleiben gleich.</span>
+                </div>
+              </div>
+              <div class="fields compact">
+                <label>
+                  <span>Aktion/Modus</span>
+                  <select value={bulkAction.action} on:change={(event) => setBulkAction('action', event.currentTarget.value)}>
+                    {#each bulkActionOptions() as action}<option value={action}>{action}</option>{/each}
+                  </select>
+                </label>
+                {#if bulkAction.action === 'set-level'}
+                  <label><span>Level %</span><input type="number" min="0" max="100" value={bulkAction.value || 100} on:input={(event) => setBulkAction('value', event.currentTarget.value)} /></label>
+                {/if}
+              </div>
+            </div>
+          {/if}
           {#if bulkLedEnabled}
             <div class="quick-map">
               <div class="quick-map-head">
@@ -1650,10 +1714,10 @@
               {@render LedControls(bulkLed, setBulkLed, 'pad')}
             </div>
           {/if}
-          {#if quickMapEnabled || bulkTargetEnabled || bulkLedEnabled}
+          {#if quickMapEnabled || bulkTargetEnabled || bulkActionEnabled || bulkLedEnabled}
             <button disabled={!bulkApplyEnabled} on:click={applyBulkEdit}>Mehrfachauswahl speichern</button>
           {:else}
-            <p class="empty">Quick Mapping, Zieltyp oder Farbe/LED anhaken.</p>
+            <p class="empty">Quick Mapping, Zieltyp, Aktion/Modus oder Farbe/LED anhaken.</p>
           {/if}
         {:else if editor}
           <div class="fields compact">
@@ -1867,7 +1931,7 @@
   .editor { display: grid; align-content: start; gap: 12px; }
   .bulk-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
   .bulk-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-  .bulk-options { display: grid; grid-template-columns: repeat(3, minmax(120px, 1fr)); gap: 8px; }
+  .bulk-options { display: grid; grid-template-columns: repeat(4, minmax(120px, 1fr)); gap: 8px; }
   .quick-map { display: grid; gap: 12px; padding: 12px; border: 1px solid #2d372f; border-radius: 8px; background: #111612; }
   .quick-map-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
   .quick-map-head strong, .quick-map-head span { display: block; }
