@@ -595,6 +595,7 @@ const port = Number(process.env.PORT || config.server.port || 3001);
 const host = config.server.host || '0.0.0.0';
 server.listen(port, host, () => {
   console.log(`AKAI MagicQ bridge listening on http://${host}:${port}`);
+  scheduleStartupSystemUpdateCheck();
 });
 
 let shuttingDown = false;
@@ -1063,7 +1064,7 @@ function systemUpdateStatus(options = {}) {
   return statusData;
 }
 
-function startSystemUpdateCheck() {
+function startSystemUpdateCheck(options = {}) {
   if (systemUpdateRunning) {
     throw new Error('Update laeuft bereits.');
   }
@@ -1078,7 +1079,7 @@ function startSystemUpdateCheck() {
 
   systemUpdateCheckRunning = true;
   fs.mkdirSync(DATA_DIR, { recursive: true });
-  fs.writeFileSync(SYSTEM_UPDATE_LOG_PATH, '', 'utf8');
+  if (options.clearLog !== false) fs.writeFileSync(SYSTEM_UPDATE_LOG_PATH, '', 'utf8');
   writeSystemUpdateStatus({
     ...readSystemUpdateStatus(),
     state: 'checking',
@@ -1087,12 +1088,13 @@ function startSystemUpdateCheck() {
     updateAvailable: false,
     githubReachable: null,
     step: 'git-fetch',
+    checkSource: options.source || 'manual',
     checkedStartedAt: new Date().toISOString(),
     serviceName: systemServiceName(),
     error: ''
   });
 
-  runSystemUpdateCheck().catch((error) => {
+  runSystemUpdateCheck(options.source || 'manual').catch((error) => {
     appendSystemUpdateLog(`FEHLER: ${error.message}`);
     writeSystemUpdateStatus({
       ...readSystemUpdateStatus(),
@@ -1102,6 +1104,7 @@ function startSystemUpdateCheck() {
       updateAvailable: false,
       githubReachable: false,
       step: 'failed',
+      checkSource: options.source || 'manual',
       error: error.message,
       checkedAt: new Date().toISOString(),
       serviceName: systemServiceName()
@@ -1164,8 +1167,8 @@ function startSystemUpdate() {
   return systemUpdateStatus({ includeLog: true });
 }
 
-async function runSystemUpdateCheck() {
-  appendSystemUpdateLog('Update-Pruefung gestartet.');
+async function runSystemUpdateCheck(source = 'manual') {
+  appendSystemUpdateLog(`Update-Pruefung gestartet (${source}).`);
   await runSystemUpdateCommand('Git Fetch', 'git', ['fetch', '--prune']);
 
   writeSystemUpdateStatus({ ...readSystemUpdateStatus(), step: 'check-update' });
@@ -1178,6 +1181,7 @@ async function runSystemUpdateCheck() {
     updateAvailable: updateInfo.behind > 0,
     githubReachable: true,
     step: updateInfo.behind > 0 ? 'update-available' : 'up-to-date',
+    checkSource: source,
     checkedAt: new Date().toISOString(),
     head: updateInfo.head,
     upstream: updateInfo.upstream,
@@ -1357,6 +1361,18 @@ function readSystemUpdateLogTail() {
   }
 }
 
+function scheduleStartupSystemUpdateCheck() {
+  if (process.platform !== 'linux') return;
+  setTimeout(() => {
+    try {
+      startSystemUpdateCheck({ source: 'startup', clearLog: false });
+      broadcast('status', status());
+    } catch (error) {
+      reportError(error, 'system-update-startup-check');
+    }
+  }, 2500);
+}
+
 function markSystemUpdateAfterStartup() {
   const current = readSystemUpdateStatus();
   if (!current) return;
@@ -1381,6 +1397,16 @@ function markSystemUpdateAfterStartup() {
       step: 'failed',
       error: 'Server wurde waehrend des Updates beendet.',
       failedAt: new Date().toISOString()
+    });
+  } else if (current.state === 'checking') {
+    writeSystemUpdateStatus({
+      ...current,
+      state: 'idle',
+      running: false,
+      checking: false,
+      step: 'idle',
+      error: '',
+      updateAvailable: false
     });
   }
 }

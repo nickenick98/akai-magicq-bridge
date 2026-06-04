@@ -105,8 +105,6 @@
   let wsState = 'offline';
   let pollTimer = null;
   let ledClockTimer = null;
-  let updateCheckTimer = null;
-  let updateCheckRequested = false;
   let ledClock = Date.now();
 
   let activeLayer = 'normal';
@@ -158,13 +156,11 @@
     ledClockTimer = setInterval(() => {
       ledClock = Date.now();
     }, 40);
-    updateCheckTimer = setInterval(() => checkSystemUpdate(true), 60000);
   });
 
   onDestroy(() => {
     if (pollTimer) clearInterval(pollTimer);
     if (ledClockTimer) clearInterval(ledClockTimer);
-    if (updateCheckTimer) clearInterval(updateCheckTimer);
     if (ws) ws.close();
   });
 
@@ -239,10 +235,6 @@
     if (data.recent) recent = data.recent;
     if (data.liveInput) applyLiveInput(data.liveInput, false);
     if (data.midi?.shiftActive) activeLayer = 'shift';
-    if (!updateCheckRequested && data.network?.platform === 'linux') {
-      updateCheckRequested = true;
-      setTimeout(() => checkSystemUpdate(true), 800);
-    }
     bumpView();
   }
 
