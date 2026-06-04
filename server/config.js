@@ -124,9 +124,9 @@ const defaultConfig = {
   midi: {
     input: '',
     output: '',
-    watchIntervalMs: 1500,
+    watchIntervalMs: 3000,
     reconnectIntervalMs: 2000,
-    deviceCacheTtlMs: 1000
+    deviceCacheTtlMs: 5000
   },
   network: {
     interface: 'eth0',
@@ -268,6 +268,10 @@ function normalizeConfig(config) {
   next.apc.shiftBehavior.recoverDelaysMs = recoverDelays.some((delay) => delay === 0)
     ? recoverDelays
     : [0, ...recoverDelays];
+
+  next.midi.watchIntervalMs = Math.max(3000, Number(next.midi.watchIntervalMs || 3000));
+  next.midi.reconnectIntervalMs = Math.max(2000, Number(next.midi.reconnectIntervalMs || 2000));
+  next.midi.deviceCacheTtlMs = Math.max(5000, Number(next.midi.deviceCacheTtlMs || 5000));
 
   next.mappings = (next.mappings || [])
     .map((mapping) => migrateMapping(mapping))

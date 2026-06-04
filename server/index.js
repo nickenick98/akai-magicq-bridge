@@ -80,7 +80,7 @@ function reportError(error, source = 'server') {
   broadcast('error', data);
 }
 
-function status() {
+function status(options = {}) {
   return {
     midi: midi.getStatus(),
     osc: osc.getStatus(),
@@ -89,7 +89,7 @@ function status() {
       ...(lastNetworkApply ? { lastApply: lastNetworkApply } : {}),
       ...(lastNetworkBackupApply ? { lastBackupApply: lastNetworkBackupApply } : {})
     },
-    devices: midi.listDevices(),
+    ...(options.includeDevices ? { devices: midi.listDevices() } : {}),
     state: config.state || { faders: {}, currentPage: 1 },
     executorState,
     playbackState,
@@ -517,7 +517,7 @@ app.post('/api/page', (req, res) => {
 });
 
 app.get('/api/status', (req, res) => {
-  res.json({ ...status(), recent });
+  res.json({ ...status({ includeDevices: req.query.devices === '1' }), recent });
 });
 
 wss.on('connection', (socket) => {

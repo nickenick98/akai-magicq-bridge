@@ -148,7 +148,7 @@
   $: bulkApplyEnabled = selection.length > 0 && (bulkTargetEnabled || bulkLedEnabled || (quickMapEnabled && quickMapCanSave));
 
   onMount(async () => {
-    await loadInitial();
+    loadInitial();
     connectWs();
     pollTimer = setInterval(pollStatus, 5000);
     ledClockTimer = setInterval(() => {
@@ -163,14 +163,38 @@
   });
 
   async function loadInitial() {
-    const [configResponse, devicesResponse, statusResponse] = await Promise.all([
-      fetch('/api/config'),
-      fetch('/api/midi/devices'),
-      fetch('/api/status')
-    ]);
-    config = await configResponse.json();
-    devices = await devicesResponse.json();
-    applyStatus(await statusResponse.json());
+    try {
+      const configResponse = await fetch('/api/config', { cache: 'no-store' });
+      config = await configResponse.json();
+      bumpView();
+    } catch (err) {
+      error = `/api/config: ${err.message}`;
+      return;
+    }
+
+    loadStatusSoon();
+    loadDevicesSoon();
+  }
+
+  async function loadStatusSoon() {
+    try {
+      const statusResponse = await fetch('/api/status', { cache: 'no-store' });
+      if (statusResponse.ok) applyStatus(await statusResponse.json());
+    } catch {
+      // WebSocket updates will fill the status once the backend is reachable.
+    }
+  }
+
+  async function loadDevicesSoon() {
+    try {
+      const devicesResponse = await fetch('/api/midi/devices', { cache: 'no-store' });
+      if (devicesResponse.ok) {
+        devices = await devicesResponse.json();
+        bumpView();
+      }
+    } catch {
+      // Device refresh is also available through the MIDI selectors/reconnect.
+    }
   }
 
   function connectWs() {
