@@ -1381,40 +1381,42 @@
             {#each devices.outputs || [] as output}<option value={output}>{output}</option>{/each}
           </select>
         </label>
-        <label class="checkbox-row">
-          <input
-            type="checkbox"
-            checked={config.apc?.shiftBehavior?.switchPage !== false}
-            on:change={(event) => setApcShiftBehavior('switchPage', event.currentTarget.checked)}
-          />
-          <span>Shift schaltet Seite 2</span>
-        </label>
-        <label class="checkbox-row">
-          <input
-            type="checkbox"
-            checked={config.feedback?.localStateUpdates !== false}
-            on:change={(event) => setLocalStateUpdates(event.currentTarget.checked)}
-          />
-          <span>Interne Statushaltung erlauben</span>
-        </label>
-        <label class="checkbox-row">
-          <input
-            type="checkbox"
-            checked={config.feedback?.oscResyncEnabled === true}
-            on:change={(event) => setOscResyncEnabled(event.currentTarget.checked)}
-          />
-          <span>OSC Resync zyklisch senden</span>
-        </label>
-        <label>
-          <span>OSC Resync alle Sekunden</span>
-          <input
-            type="number"
-            min="5"
-            step="1"
-            value={Math.round((config.feedback?.oscResyncIntervalMs || 10000) / 1000)}
-            on:input={(event) => setOscResyncIntervalSeconds(event.currentTarget.value)}
-          />
-        </label>
+        <div class="connection-options">
+          <label class="option-toggle">
+            <input
+              type="checkbox"
+              checked={config.apc?.shiftBehavior?.switchPage !== false}
+              on:change={(event) => setApcShiftBehavior('switchPage', event.currentTarget.checked)}
+            />
+            <span>Shift schaltet Seite 2</span>
+          </label>
+          <label class="option-toggle">
+            <input
+              type="checkbox"
+              checked={config.feedback?.localStateUpdates !== false}
+              on:change={(event) => setLocalStateUpdates(event.currentTarget.checked)}
+            />
+            <span>Interne Statushaltung erlauben</span>
+          </label>
+          <label class="option-toggle">
+            <input
+              type="checkbox"
+              checked={config.feedback?.oscResyncEnabled === true}
+              on:change={(event) => setOscResyncEnabled(event.currentTarget.checked)}
+            />
+            <span>OSC Resync zyklisch senden</span>
+          </label>
+          <label class="option-number">
+            <span>Resync alle Sekunden</span>
+            <input
+              type="number"
+              min="5"
+              step="1"
+              value={Math.round((config.feedback?.oscResyncIntervalMs || 10000) / 1000)}
+              on:input={(event) => setOscResyncIntervalSeconds(event.currentTarget.value)}
+            />
+          </label>
+        </div>
       </div>
       {#if status.network?.platform === 'linux'}
         <p class="hint">
@@ -1935,6 +1937,12 @@
   .pill.ok { border-color: #49825c; color: #9ff0b7; }
   .fields, .led-controls { display: grid; grid-template-columns: repeat(2, minmax(160px, 1fr)); gap: 12px; }
   .connection .fields { grid-template-columns: repeat(5, minmax(130px, 1fr)); }
+  .connection-options { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(3, minmax(180px, max-content)) minmax(150px, 190px); gap: 8px; align-items: stretch; }
+  .option-toggle, .option-number { border: 1px solid #2d372f; border-radius: 6px; background: #111612; min-height: 38px; }
+  .option-toggle { display: flex; align-items: center; gap: 9px; padding: 8px 10px; color: #d8ecd1; font-size: 12px; font-weight: 800; }
+  .option-number { display: grid; grid-template-columns: 1fr 64px; align-items: center; gap: 8px; padding: 6px 8px; }
+  .option-number span { color: #9cac9d; font-size: 11px; font-weight: 800; }
+  .option-number input { min-height: 28px; padding: 5px 7px; }
   .network-status { justify-content: flex-start; margin-bottom: 12px; }
   .network-fields { grid-template-columns: repeat(3, minmax(150px, 1fr)); }
   .command-preview { margin: 12px 0 0; padding: 12px; overflow: auto; border: 1px solid #263229; border-radius: 6px; background: #0d110f; color: #b8f36d; font-size: 12px; }
@@ -1994,6 +2002,6 @@
   .notice { color: #9ff0b7; }
   .monitor-grid { display: grid; grid-template-columns: repeat(4, minmax(180px, 1fr)); gap: 12px; }
   .loading { min-height: 220px; display: grid; place-items: center; color: #aebdae; }
-  @media (max-width: 1120px) { .workspace, .connection .fields, .network-fields, .ip-list, .live-strip, .monitor-grid { grid-template-columns: 1fr; } }
-  @media (max-width: 720px) { main { width: calc(100vw - 18px); } .topbar { align-items: flex-start; flex-direction: column; } .controller { grid-template-columns: 1fr; grid-template-areas: 'matrix' 'scenes' 'controls' 'faders'; } .matrix, .scenes, .controls, .faders, .bulk-options { grid-template-columns: repeat(4, minmax(0, 1fr)); } .bulk-options { grid-template-columns: 1fr; } }
+  @media (max-width: 1120px) { .workspace, .connection .fields, .network-fields, .ip-list, .live-strip, .monitor-grid { grid-template-columns: 1fr; } .connection-options { grid-template-columns: repeat(2, minmax(180px, 1fr)); } }
+  @media (max-width: 720px) { main { width: calc(100vw - 18px); } .topbar { align-items: flex-start; flex-direction: column; } .controller { grid-template-columns: 1fr; grid-template-areas: 'matrix' 'scenes' 'controls' 'faders'; } .matrix, .scenes, .controls, .faders, .bulk-options { grid-template-columns: repeat(4, minmax(0, 1fr)); } .bulk-options, .connection-options { grid-template-columns: 1fr; } }
 </style>
