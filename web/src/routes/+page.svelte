@@ -38,7 +38,9 @@
     ['magicq-dbo', 'DBO'],
     ['magicq-swap', 'Swap'],
     ['magicq-rpc', 'RPC Command'],
-    ['special', 'Bridge Spezialfunktion']
+    ['special', 'Bridge Spezialfunktion'],
+    ['shift-hold', 'Shift Hold'],
+    ['shift-toggle', 'Shift Toggle']
   ];
   const targetTypesBySource = {
     pad: [
@@ -82,7 +84,7 @@
       'magicq-rpc',
       'special'
     ],
-    shift: ['disabled', 'special'],
+    shift: ['shift-hold', 'shift-toggle'],
     fader: ['disabled', 'magicq-executor-fader', 'magicq-playback-level', 'magicq-10scene']
   };
   const executorActions = ['toggle', 'flash', 'go', 'release', 'set-level'];
@@ -259,7 +261,8 @@
     };
     if (data.recent) recent = data.recent;
     if (data.liveInput) applyLiveInput(data.liveInput, false);
-    if (data.midi?.shiftActive) activeLayer = 'shift';
+    if (data.midi?.shiftActive || data.state?.currentPage === 2) activeLayer = 'shift';
+    else if (data.state?.currentPage === 1) activeLayer = 'normal';
     bumpView();
   }
 
@@ -295,10 +298,6 @@
       updateFaderState(event.controller, event.value);
       bumpView();
       return;
-    }
-
-    if (event.note === shiftNote) {
-      activeLayer = event.event === 'noteon' && event.velocity > 0 ? 'shift' : 'normal';
     }
 
     const eventAt = event.at || new Date().toISOString();
@@ -436,7 +435,7 @@
   }
 
   function layerForSource(type, layer = activeLayer) {
-    return type === 'fader' ? 'normal' : layer;
+    return type === 'fader' || type === 'shift' ? 'normal' : layer;
   }
 
   function mappingFor(type, value, layer = activeLayer) {
@@ -447,7 +446,7 @@
       (mapping) =>
         mapping.source?.type === type &&
         mapping.source?.[sourceKey] === value &&
-        (type === 'fader' || Boolean(mapping.source?.shift) === (effectiveLayer === 'shift'))
+        (type === 'fader' || type === 'shift' || Boolean(mapping.source?.shift) === (effectiveLayer === 'shift'))
     );
   }
 
@@ -459,7 +458,7 @@
       id: `${isShift ? 'shift-' : ''}${type}-${value}`,
       source: { type, [sourceKey]: value, shift: isShift },
       target: {
-        type: type === 'fader' ? 'magicq-executor-fader' : 'magicq-executor-button',
+        type: type === 'shift' ? 'shift-hold' : type === 'fader' ? 'magicq-executor-fader' : 'magicq-executor-button',
         page: isShift ? 2 : 1,
         executor: type === 'pad' ? value + 1 : 1,
         action: type === 'fader' ? 'set-level' : 'toggle',
@@ -486,13 +485,19 @@
       range: { min: 0, max: 100, ...(created.range || {}) }
     };
     if (!targetTypeAllowed(type, next.target.type)) {
-      next.target = { ...next.target, type: 'disabled', action: 'off' };
-      next.led = { ...next.led, offColor: 0, offMode: 'off', onColor: 0, activeMode: 'off' };
+      next.target = type === 'shift' ? { type: 'shift-hold' } : { ...next.target, type: 'disabled', action: 'off' };
+      if (type !== 'shift') next.led = { ...next.led, offColor: 0, offMode: 'off', onColor: 0, activeMode: 'off' };
     }
     if (type === 'fader') {
       next.id = `fader-${value}`;
       next.source = { ...(next.source || {}), type: 'fader', cc: value, shift: false };
       next.led = { ...next.led, offColor: 0, offMode: 'off', onColor: 0, activeMode: 'off' };
+    }
+    if (type === 'shift') {
+      next.id = `shift-${value}`;
+      next.source = { ...(next.source || {}), type: 'shift', note: value, shift: false };
+      next.target = prepareTargetForType(next.target);
+      next.led = { offColor: 0, offMode: 'off', onColor: 0, activeMode: 'off' };
     }
     return next;
   }
@@ -519,6 +524,7 @@
     if (isBlockedShiftScene(type)) return false;
     if (mapping?.target?.type === 'disabled') return false;
     if (type === 'fader') return live.ccs[value] !== undefined;
+    if (type === 'shift') return Boolean(status.midi?.shiftActive || status.state?.currentPage === 2);
     if (live.notes[value] && localStateUpdatesEnabled()) return true;
     if (mapping?.target?.type === 'magicq-playback-level' || mapping?.target?.type === 'magicq-playback-adjust') {
       return Boolean(status.playbackState?.[mapping.target.playback || 1]?.active);
@@ -598,6 +604,7 @@
     if (!mapping) return 'kein map';
     if (mapping?.target?.type === 'disabled') return 'aus';
     const target = targetReadout(mapping);
+    if (type === 'shift') return target;
     if (type === 'fader') return `${target} ${faderLevel(value)}%`;
     const state = ledState(type, value);
     const led = ledReadout(type, mapping, state);
@@ -622,11 +629,14 @@
     if (target.type === 'magicq-swap') return `Swap ${target.mode || 'normal'}`;
     if (target.type === 'magicq-rpc') return 'RPC';
     if (target.type === 'special') return `Spez ${target.action || ''}`.trim();
+    if (target.type === 'shift-hold') return 'Shift Hold';
+    if (target.type === 'shift-toggle') return 'Shift Toggle';
     return target.type || 'map';
   }
 
   function ledReadout(type, mapping, state) {
     if (state?.blocked) return 'block blink';
+    if (type === 'shift') return '';
     if (type === 'scene' || type === 'control' || type === 'shift') {
       const led = mapping?.led || {};
       return `${state.active ? 'A' : 'O'} ${led.offMode || 'off'}/${led.activeMode || 'solid'}`;
@@ -803,6 +813,9 @@
     if (next.type === 'magicq-dbo' && !dboActions.includes(next.action)) next.action = 'toggle';
     if (next.type === 'special' && !specialActions.includes(next.action)) next.action = 'select-page';
     if (next.type === 'magicq-executor-button' && !executorActions.includes(next.action)) next.action = 'toggle';
+    if (next.type === 'shift-hold' || next.type === 'shift-toggle') {
+      return { type: next.type };
+    }
     return next;
   }
 
@@ -851,7 +864,7 @@
   }
 
   function hasLedControls(type) {
-    return type === 'pad' || type === 'scene' || type === 'control' || type === 'shift';
+    return type === 'pad' || type === 'scene' || type === 'control';
   }
 
   function hasRgbLedControls(type) {
@@ -1436,14 +1449,6 @@
           <label class="option-toggle">
             <input
               type="checkbox"
-              checked={config.apc?.shiftBehavior?.switchPage !== false}
-              on:change={(event) => setApcShiftBehavior('switchPage', event.currentTarget.checked)}
-            />
-            <span>Shift schaltet Seite 2</span>
-          </label>
-          <label class="option-toggle">
-            <input
-              type="checkbox"
               checked={config.feedback?.localStateUpdates !== false}
               on:change={(event) => setLocalStateUpdates(event.currentTarget.checked)}
             />
@@ -1586,7 +1591,7 @@
 
         <div class="live-strip">
           <div><strong>Letztes MIDI</strong><span>{live.last ? (live.last.event === 'cc' ? `CC ${live.last.controller}: ${live.last.value}` : `Note ${live.last.note}: ${live.last.velocity}`) : 'nichts'}</span></div>
-          <div><strong>Shift</strong><span>{status.midi?.shiftActive ? 'gedrueckt' : 'frei'}</span></div>
+          <div><strong>Shift</strong><span>{status.midi?.shiftActive ? 'gedrückt' : status.state?.currentPage === 2 ? 'eingerastet' : 'frei'}</span></div>
           <div><strong>Fader 1</strong><span>{faderRaw(48, viewRevision)} / {faderLevel(48, viewRevision)}%</span></div>
           <div><strong>OSC Feedback</strong><span>{status.osc?.connected ? 'empfangen' : 'wartet'}</span></div>
         </div>
@@ -1612,7 +1617,7 @@
                 <span class="main">C{index + 1}</span><span class="readout">{readout('control', note, viewRevision)}</span>
               </button>
             {/each}
-            <button class:active={status.midi?.shiftActive} class:selected={selected?.type === 'shift'} class:bulk={isSelectedBulk('shift', shiftNote)} class={modeClass('shift', shiftNote, viewRevision)} style={styleFor('shift', shiftNote, ledClock)} on:click={() => selectElement('shift', shiftNote)}>
+            <button class:active={status.midi?.shiftActive || status.state?.currentPage === 2} class:selected={selected?.type === 'shift'} class:bulk={isSelectedBulk('shift', shiftNote)} class={modeClass('shift', shiftNote, viewRevision)} style={styleFor('shift', shiftNote, ledClock)} on:click={() => selectElement('shift', shiftNote)}>
               <span class="main">Shift</span><span class="readout">{readout('shift', shiftNote, viewRevision)}</span>
             </button>
           </div>
@@ -1629,7 +1634,7 @@
       <section class="editor">
         <div class="section-head">
           <h2>{multiSelect ? 'Mehrfach bearbeiten' : 'Mapping Editor'}</h2>
-          {#if editor && !multiSelect}<button class="danger" on:click={deleteMapping}>Auf Aus setzen</button>{/if}
+          {#if editor && !multiSelect && selected?.type !== 'shift'}<button class="danger" on:click={deleteMapping}>Auf Aus setzen</button>{/if}
         </div>
         {#if error}<p class="error">{error}</p>{/if}
         {#if notice}<p class="notice">{notice}</p>{/if}
@@ -1829,7 +1834,7 @@
           {/if}
         {:else if editor}
           <div class="fields compact">
-            <label><span>ID</span><input bind:value={editor.id} /></label>
+            {#if selected?.type !== 'shift'}<label><span>ID</span><input bind:value={editor.id} /></label>{/if}
             <label>
               <span>Zieltyp</span>
               <select value={editor.target.type} on:change={(event) => setTargetType(event.currentTarget.value)}>
@@ -1997,7 +2002,7 @@
   .ip-pill { border-color: #354a56; color: #9fdfff; background: #10191d; max-width: 240px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .fields, .led-controls { display: grid; grid-template-columns: repeat(2, minmax(160px, 1fr)); gap: 12px; }
   .connection .fields { grid-template-columns: repeat(5, minmax(130px, 1fr)); }
-  .connection-options { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(3, minmax(180px, max-content)) minmax(150px, 190px); gap: 8px; align-items: stretch; }
+  .connection-options { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(2, minmax(180px, max-content)) minmax(150px, 190px); gap: 8px; align-items: stretch; }
   .option-toggle, .option-number { border: 1px solid #2d372f; border-radius: 6px; background: #111612; min-height: 38px; }
   .option-toggle { display: flex; align-items: center; gap: 9px; padding: 8px 10px; color: #d8ecd1; font-size: 12px; font-weight: 800; }
   .option-number { display: grid; grid-template-columns: 1fr 64px; align-items: center; gap: 8px; padding: 6px 8px; }

@@ -176,12 +176,7 @@ midi.on('midi', (event) => {
 
   const sourceType = normalizeSourceType(event, config.apc);
   if (sourceType === 'shift') {
-    if (shiftSwitchesPage()) {
-      config.state = {
-        ...(config.state || {}),
-        currentPage: midi.shiftActive ? 2 : 1
-      };
-    }
+    applyShiftMapping(event);
     refreshAllLeds();
     if (!midi.shiftActive && shiftBehavior().recoverOnRelease !== false) {
       scheduleHardwareLedRecovery('shift-release');
@@ -815,8 +810,20 @@ function shiftBehavior() {
   return behavior;
 }
 
-function shiftSwitchesPage() {
-  return shiftBehavior().switchPage !== false;
+function applyShiftMapping(event) {
+  const mapping = findMapping(event, config, false);
+  const targetType = mapping?.target?.type || 'shift-hold';
+  config.state = config.state || { faders: {}, currentPage: 1 };
+
+  if (targetType === 'shift-toggle') {
+    if (!isPress(event)) return;
+    config.state.currentPage = config.state.currentPage === 2 ? 1 : 2;
+    return;
+  }
+
+  if (targetType === 'shift-hold') {
+    config.state.currentPage = midi.shiftActive ? 2 : 1;
+  }
 }
 
 function shouldBlockInternalShiftCombo(sourceType, event) {

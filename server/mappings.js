@@ -91,6 +91,25 @@ function mappingSourceKey(mapping) {
 }
 
 function normalizeMapping(mapping) {
+  if (mapping?.source?.type === 'shift') {
+    return {
+      ...mapping,
+      id: `shift-${mapping.source?.note}`,
+      source: {
+        ...(mapping.source || {}),
+        shift: false
+      },
+      target: {
+        type: mapping.target?.type === 'shift-toggle' ? 'shift-toggle' : 'shift-hold'
+      },
+      led: {
+        offColor: 0,
+        offMode: 'off',
+        onColor: 0,
+        activeMode: 'off'
+      }
+    };
+  }
   if (mapping?.source?.type !== 'fader') return mapping;
   return {
     ...mapping,

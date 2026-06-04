@@ -100,7 +100,21 @@ function createDefaultMappings() {
     }
   }));
 
-  return [...padMappings, ...faderMappings, ...sceneMappings, ...controlMappings];
+  const shiftMapping = {
+    id: `shift-${APC_DEFAULTS.shiftNote}`,
+    source: { type: 'shift', note: APC_DEFAULTS.shiftNote, shift: false },
+    target: {
+      type: 'shift-hold'
+    },
+    led: {
+      offColor: 0,
+      offMode: 'off',
+      onColor: 0,
+      activeMode: 'off'
+    }
+  };
+
+  return [...padMappings, ...faderMappings, ...sceneMappings, ...controlMappings, shiftMapping];
 }
 
 const defaultConfig = {
@@ -318,6 +332,17 @@ function migrateMapping(mapping) {
 
   if (source.type === 'shift' && source.note === LEGACY_APC_DEFAULTS.shiftNote) {
     source.note = APC_DEFAULTS.shiftNote;
+  }
+
+  if (source.type === 'shift') {
+    source.shift = false;
+    next.id = `shift-${source.note}`;
+    if (next.target?.type !== 'shift-hold' && next.target?.type !== 'shift-toggle') {
+      next.target = { type: 'shift-hold' };
+    } else {
+      next.target = { type: next.target.type };
+    }
+    next.led = { offColor: 0, offMode: 'off', onColor: 0, activeMode: 'off' };
   }
 
   if (source.type === 'fader') {
