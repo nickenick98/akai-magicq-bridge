@@ -66,12 +66,21 @@ chmod +x scripts/install-raspi.sh
 Der Installer erledigt:
 
 - Systempakete installieren
+- NetworkManager installieren/aktivieren
 - Node.js 20 installieren, falls noetig
 - User `akai` zur Gruppe `audio` hinzufuegen
-- `npm install`
+- `npm ci`, wenn `package-lock.json` vorhanden ist, sonst `npm install`
 - `npm run build`
 - sudoers fuer `ip` und `nmcli`
-- systemd-Service installieren und starten
+- systemd-Service passend zu User/Pfad installieren und starten
+
+Der Installer muss als normaler App-User laufen, nicht mit `sudo`. Standard ist `akai`.
+
+Optional mit anderem User/Pfad:
+
+```bash
+APP_USER=<dein-user> APP_DIR=/bridge/akai-magicq-bridge ./scripts/install-raspi.sh
+```
 
 ## 5. Neustart
 
@@ -146,7 +155,7 @@ In MagicQ:
 ```bash
 cd /bridge/akai-magicq-bridge
 git pull
-npm install
+npm ci
 npm run build
 sudo systemctl restart akai-magicq-bridge
 ```

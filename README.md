@@ -93,6 +93,8 @@ chmod +x scripts/install-raspi.sh
 sudo reboot
 ```
 
+Das Install-Skript bitte als normaler App-User ausfuehren, nicht mit `sudo`. Standard ist `APP_USER=akai`; bei einem anderen Raspberry-User kann `APP_USER=<user>` gesetzt werden.
+
 Raspberry Pi OS Bookworm nutzt standardmaessig NetworkManager. Die Bridge erwartet Node.js 20 oder neuer.
 
 1. Systempakete installieren:
