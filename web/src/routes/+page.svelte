@@ -1138,6 +1138,15 @@
     bumpView();
   }
 
+  async function runSystemUpdate() {
+    if (!window.confirm('Update starten? Die Bridge zieht Git, baut neu und startet den Service neu.')) return;
+    const response = await api('/api/system/update', { method: 'POST' });
+    const data = await response.json();
+    status = { ...status, systemUpdate: data.update };
+    notice = 'Update gestartet. Die Bridge startet nach dem Build neu.';
+    bumpView();
+  }
+
   async function saveMidiSelection() {
     const data = await (await api('/api/midi/select', { method: 'POST', body: config.midi })).json();
     config = data.config;
@@ -1187,6 +1196,7 @@
       <span class:ok={status.midi?.outputConnected} class="pill">MIDI Out {status.midi?.outputConnected ? 'ok' : 'off'}</span>
       <span class:ok={status.osc?.ready} class="pill">OSC {status.osc?.ready ? 'ready' : 'off'}</span>
       <span class:ok={status.oscResync?.enabled} class="pill">Resync {status.oscResync?.enabled ? `${Math.round((status.oscResync?.intervalMs || 0) / 1000)}s` : 'aus'}</span>
+      <span class:ok={status.systemUpdate?.state === 'completed'} class="pill">Update {status.systemUpdate?.state || 'idle'}</span>
     </div>
   </header>
 
@@ -1198,6 +1208,9 @@
           <button on:click={saveConnection}>Speichern</button>
           <button class="secondary" on:click={reconnect}>Neu verbinden</button>
           <button class="secondary" on:click={resyncOscStates}>OSC Resync jetzt</button>
+          {#if status.network?.platform === 'linux'}
+            <button class="secondary" disabled={status.systemUpdate?.running} on:click={runSystemUpdate}>Update</button>
+          {/if}
         </div>
       </div>
       <div class="fields">
@@ -1277,6 +1290,9 @@
           />
         </label>
       </div>
+      {#if status.systemUpdate?.state && status.systemUpdate.state !== 'idle'}
+        <p class="hint">Update: {status.systemUpdate.step || status.systemUpdate.state} {status.systemUpdate.error ? `- ${status.systemUpdate.error}` : ''}</p>
+      {/if}
     </section>
 
     <section class="backup">

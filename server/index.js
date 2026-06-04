@@ -1,10 +1,12 @@
 const path = require('path');
+const fs = require('fs');
 const express = require('express');
 const cors = require('cors');
 const http = require('http');
+const { spawn } = require('child_process');
 const { WebSocket, WebSocketServer } = require('ws');
 
-const { readConfig, readState, updateConfig, writeConfig, writeState } = require('./config');
+const { DATA_DIR, readConfig, readState, updateConfig, writeConfig, writeState } = require('./config');
 const { MidiBridge, getMidiHardwarePresence, isApcDeviceName, resolveMidiDeviceName } = require('./midi');
 const { OscBridge } = require('./osc');
 const { LedController } = require('./led');
@@ -27,6 +29,9 @@ let networkBackupApplying = false;
 let lastNetworkApply = null;
 let lastNetworkBackupApply = null;
 let lastOscResync = null;
+let systemUpdateRunning = false;
+const SYSTEM_UPDATE_STATUS_PATH = path.join(DATA_DIR, 'system-update.json');
+const SYSTEM_UPDATE_LOG_PATH = path.join(DATA_DIR, 'system-update.log');
 
 const app = express();
 const server = http.createServer(app);
@@ -51,6 +56,7 @@ const liveInputState = {
 
 app.use(cors());
 app.use(express.json({ limit: '1mb' }));
+markSystemUpdateAfterStartup();
 
 function remember(bucket, item) {
   const limit = config.ui?.recentEventLimit || 80;
@@ -92,6 +98,7 @@ function status() {
     executorState,
     playbackState,
     oscResync: oscResyncStatus(),
+    systemUpdate: systemUpdateStatus(),
     liveInput: liveInputState
   };
 }
@@ -458,6 +465,21 @@ app.post('/api/led/refresh', (req, res) => {
   } catch (error) {
     reportError(error, 'led');
     res.status(500).json({ ok: false, error: error.message });
+  }
+});
+
+app.get('/api/system/update', (req, res) => {
+  res.json(systemUpdateStatus({ includeLog: true }));
+});
+
+app.post('/api/system/update', (req, res) => {
+  try {
+    const update = startSystemUpdate();
+    broadcast('status', status());
+    res.json({ ok: true, update });
+  } catch (error) {
+    reportError(error, 'system-update');
+    res.status(400).json({ ok: false, error: error.message, update: systemUpdateStatus({ includeLog: true }) });
   }
 });
 
@@ -1004,6 +1026,168 @@ function mappedFaderLevel(mapping) {
 
 function hasExecutorAddress(target) {
   return Number.isFinite(Number(target?.page)) && Number.isFinite(Number(target?.executor));
+}
+
+function systemUpdateStatus(options = {}) {
+  const current = readSystemUpdateStatus();
+  const statusData = {
+    state: 'idle',
+    running: systemUpdateRunning,
+    serviceName: systemServiceName(),
+    ...(current || {}),
+    running: systemUpdateRunning || current?.state === 'running' || current?.state === 'restarting'
+  };
+
+  if (options.includeLog) {
+    statusData.log = readSystemUpdateLogTail();
+  }
+
+  return statusData;
+}
+
+function startSystemUpdate() {
+  if (systemUpdateRunning) {
+    throw new Error('Update laeuft bereits.');
+  }
+
+  if (process.platform !== 'linux') {
+    throw new Error('System-Update per GUI ist nur auf dem Raspberry Pi/Linux aktiv.');
+  }
+
+  systemUpdateRunning = true;
+  fs.mkdirSync(DATA_DIR, { recursive: true });
+  fs.writeFileSync(SYSTEM_UPDATE_LOG_PATH, '', 'utf8');
+  const initialStatus = {
+    state: 'running',
+    running: true,
+    startedAt: new Date().toISOString(),
+    step: 'start',
+    serviceName: systemServiceName()
+  };
+  writeSystemUpdateStatus(initialStatus);
+
+  runSystemUpdate().catch((error) => {
+    appendSystemUpdateLog(`FEHLER: ${error.message}`);
+    writeSystemUpdateStatus({
+      state: 'failed',
+      running: false,
+      step: 'failed',
+      error: error.message,
+      failedAt: new Date().toISOString(),
+      serviceName: systemServiceName()
+    });
+    systemUpdateRunning = false;
+    broadcast('status', status());
+  });
+
+  return systemUpdateStatus({ includeLog: true });
+}
+
+async function runSystemUpdate() {
+  appendSystemUpdateLog('Update gestartet.');
+  writeSystemUpdateStatus({ ...readSystemUpdateStatus(), step: 'git-pull' });
+  await runSystemUpdateCommand('Git Pull', 'git', ['pull', '--ff-only']);
+
+  writeSystemUpdateStatus({ ...readSystemUpdateStatus(), step: 'build' });
+  await runSystemUpdateCommand('Build', 'npm', ['run', 'build']);
+
+  writeSystemUpdateStatus({
+    ...readSystemUpdateStatus(),
+    state: 'restarting',
+    running: true,
+    step: 'restart',
+    restartingAt: new Date().toISOString()
+  });
+  appendSystemUpdateLog('Build fertig. Service wird neu gestartet.');
+  broadcast('status', status());
+
+  const restart = restartServiceCommand();
+  await runSystemUpdateCommand('Service Restart', restart.bin, restart.args);
+}
+
+function runSystemUpdateCommand(label, bin, args) {
+  appendSystemUpdateLog(`\n### ${label}: ${bin} ${args.join(' ')}`);
+  return new Promise((resolve, reject) => {
+    const child = spawn(bin, args, {
+      cwd: path.join(__dirname, '..'),
+      windowsHide: true
+    });
+
+    child.stdout.on('data', (data) => appendSystemUpdateLog(data.toString()));
+    child.stderr.on('data', (data) => appendSystemUpdateLog(data.toString()));
+    child.on('error', reject);
+    child.on('close', (code) => {
+      appendSystemUpdateLog(`### ${label} beendet mit Code ${code}`);
+      if (code === 0) resolve();
+      else reject(new Error(`${label} fehlgeschlagen mit Code ${code}`));
+    });
+  });
+}
+
+function restartServiceCommand() {
+  const service = systemServiceName();
+  if (process.getuid && process.getuid() === 0) {
+    return { bin: 'systemctl', args: ['--no-block', 'restart', service] };
+  }
+  return { bin: 'sudo', args: ['-n', 'systemctl', '--no-block', 'restart', service] };
+}
+
+function systemServiceName() {
+  return process.env.AKAI_MAGICQ_SERVICE || config.server?.serviceName || 'akai-magicq-bridge';
+}
+
+function readSystemUpdateStatus() {
+  try {
+    if (!fs.existsSync(SYSTEM_UPDATE_STATUS_PATH)) return null;
+    return JSON.parse(fs.readFileSync(SYSTEM_UPDATE_STATUS_PATH, 'utf8'));
+  } catch {
+    return null;
+  }
+}
+
+function writeSystemUpdateStatus(nextStatus) {
+  fs.mkdirSync(DATA_DIR, { recursive: true });
+  fs.writeFileSync(SYSTEM_UPDATE_STATUS_PATH, `${JSON.stringify(nextStatus, null, 2)}\n`, 'utf8');
+  return nextStatus;
+}
+
+function appendSystemUpdateLog(message) {
+  fs.mkdirSync(DATA_DIR, { recursive: true });
+  fs.appendFileSync(SYSTEM_UPDATE_LOG_PATH, `${message.replace(/\r/g, '')}${message.endsWith('\n') ? '' : '\n'}`, 'utf8');
+}
+
+function readSystemUpdateLogTail() {
+  try {
+    if (!fs.existsSync(SYSTEM_UPDATE_LOG_PATH)) return '';
+    const content = fs.readFileSync(SYSTEM_UPDATE_LOG_PATH, 'utf8');
+    return content.slice(-12000);
+  } catch {
+    return '';
+  }
+}
+
+function markSystemUpdateAfterStartup() {
+  const current = readSystemUpdateStatus();
+  if (!current) return;
+  if (current.state === 'restarting') {
+    writeSystemUpdateStatus({
+      ...current,
+      state: 'completed',
+      running: false,
+      step: 'completed',
+      completedAt: new Date().toISOString()
+    });
+    appendSystemUpdateLog('Service ist nach Update wieder gestartet.');
+  } else if (current.state === 'running') {
+    writeSystemUpdateStatus({
+      ...current,
+      state: 'failed',
+      running: false,
+      step: 'failed',
+      error: 'Server wurde waehrend des Updates beendet.',
+      failedAt: new Date().toISOString()
+    });
+  }
 }
 
 async function startNetworkBackup() {

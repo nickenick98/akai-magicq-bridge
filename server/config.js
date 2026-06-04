@@ -107,7 +107,8 @@ const defaultConfig = {
   server: {
     host: '0.0.0.0',
     port: 3001,
-    shutdownTimeoutMs: 2500
+    shutdownTimeoutMs: 2500,
+    serviceName: 'akai-magicq-bridge'
   },
   magicq: {
     ip: '192.168.178.50',
