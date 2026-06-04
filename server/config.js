@@ -117,7 +117,9 @@ const defaultConfig = {
     feedbackIntervalMs: 5000
   },
   feedback: {
-    localStateUpdates: true
+    localStateUpdates: true,
+    resendStatesEnabled: false,
+    resendStatesIntervalMs: 5000
   },
   midi: {
     input: '',
@@ -244,9 +246,13 @@ function normalizeConfig(config) {
   };
   next.feedback = {
     localStateUpdates: true,
+    resendStatesEnabled: false,
+    resendStatesIntervalMs: 5000,
     ...(next.feedback || {})
   };
   next.feedback.localStateUpdates = next.feedback.localStateUpdates !== false;
+  next.feedback.resendStatesEnabled = next.feedback.resendStatesEnabled === true;
+  next.feedback.resendStatesIntervalMs = Math.max(1000, Number(next.feedback.resendStatesIntervalMs || 5000));
   next.apc.shiftBehavior.blockedShiftSources = normalizeBlockedShiftSources(next.apc.shiftBehavior.blockedShiftSources);
   const recoverDelays = Array.isArray(next.apc.shiftBehavior.recoverDelaysMs)
     ? next.apc.shiftBehavior.recoverDelaysMs.map((value) => Math.max(0, Number(value) || 0))

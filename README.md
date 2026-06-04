@@ -72,6 +72,8 @@ Die OSC-Ziele sind bewusst einfach gehalten und koennen in `server/osc.js` an da
 - Executor Button: `/exec/{page}/{executor}`
 - Executor Fader: `/exec/{page}/{executor}/level`
 
+Unter `Verbindung` kann `OSC States zyklisch senden` aktiviert werden. Dann sendet die Bridge alle eingestellten Sekunden die zuletzt bekannten Executor-, Playback-, DBO- und Fader-Zustaende erneut an MagicQ. Das hilft, wenn ein einzelner UDP/OSC-Befehl unterwegs verloren geht. Der Button `OSC Sync jetzt` sendet dieselben gespeicherten Zustaende sofort.
+
 ## Raspberry Pi systemd
 
 Eine Beispiel-Service-Datei liegt unter `systemd/akai-magicq-bridge.service`.

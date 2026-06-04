@@ -1007,6 +1007,12 @@
     bumpView();
   }
 
+  async function resendOscStates() {
+    const result = await (await api('/api/osc/resend', { method: 'POST' })).json();
+    notice = `OSC States gesendet: ${result.sent || 0}`;
+    bumpView();
+  }
+
   async function saveNetwork() {
     config.network.backup.enabled = true;
     config.network.backup.applyOnStart = true;
@@ -1103,6 +1109,25 @@
     bumpView();
   }
 
+  function setFeedbackOption(key, value) {
+    config = {
+      ...config,
+      feedback: {
+        localStateUpdates: true,
+        resendStatesEnabled: false,
+        resendStatesIntervalMs: 5000,
+        ...(config.feedback || {}),
+        [key]: value
+      }
+    };
+    bumpView();
+  }
+
+  function setResendIntervalSeconds(value) {
+    const seconds = Math.max(1, Number(value) || 5);
+    setFeedbackOption('resendStatesIntervalMs', Math.round(seconds * 1000));
+  }
+
   function localStateUpdatesEnabled() {
     return config?.feedback?.localStateUpdates !== false;
   }
@@ -1165,6 +1190,7 @@
         <div class="actions">
           <button on:click={saveConnection}>Speichern</button>
           <button class="secondary" on:click={reconnect}>Neu verbinden</button>
+          <button class="secondary" on:click={resendOscStates}>OSC Sync jetzt</button>
         </div>
       </div>
       <div class="fields">
@@ -1224,6 +1250,24 @@
             on:change={(event) => setLocalStateUpdates(event.currentTarget.checked)}
           />
           <span>Interne Statushaltung erlauben</span>
+        </label>
+        <label class="checkbox-row">
+          <input
+            type="checkbox"
+            checked={config.feedback?.resendStatesEnabled === true}
+            on:change={(event) => setFeedbackOption('resendStatesEnabled', event.currentTarget.checked)}
+          />
+          <span>OSC States zyklisch senden</span>
+        </label>
+        <label>
+          <span>State Resync alle Sekunden</span>
+          <input
+            type="number"
+            min="1"
+            step="1"
+            value={Math.round((config.feedback?.resendStatesIntervalMs || 5000) / 1000)}
+            on:input={(event) => setResendIntervalSeconds(event.currentTarget.value)}
+          />
         </label>
       </div>
     </section>
