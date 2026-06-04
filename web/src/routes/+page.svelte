@@ -105,6 +105,8 @@
   let wsState = 'offline';
   let pollTimer = null;
   let ledClockTimer = null;
+  let updateCheckTimer = null;
+  let updateCheckRequested = false;
   let ledClock = Date.now();
 
   let activeLayer = 'normal';
@@ -154,11 +156,13 @@
     ledClockTimer = setInterval(() => {
       ledClock = Date.now();
     }, 40);
+    updateCheckTimer = setInterval(() => checkSystemUpdate(true), 60000);
   });
 
   onDestroy(() => {
     if (pollTimer) clearInterval(pollTimer);
     if (ledClockTimer) clearInterval(ledClockTimer);
+    if (updateCheckTimer) clearInterval(updateCheckTimer);
     if (ws) ws.close();
   });
 
@@ -233,6 +237,10 @@
     if (data.recent) recent = data.recent;
     if (data.liveInput) applyLiveInput(data.liveInput, false);
     if (data.midi?.shiftActive) activeLayer = 'shift';
+    if (!updateCheckRequested && data.network?.platform === 'linux') {
+      updateCheckRequested = true;
+      setTimeout(() => checkSystemUpdate(true), 800);
+    }
     bumpView();
   }
 
@@ -1138,7 +1146,38 @@
     bumpView();
   }
 
+  function canCheckSystemUpdate() {
+    return status.network?.platform === 'linux' && !status.systemUpdate?.running && !status.systemUpdate?.checking;
+  }
+
+  function canRunSystemUpdate() {
+    return canCheckSystemUpdate() && status.systemUpdate?.githubReachable === true && status.systemUpdate?.updateAvailable === true;
+  }
+
+  function systemUpdateLabel(update = status.systemUpdate || {}) {
+    if (update.running) return 'laeuft';
+    if (update.checking) return 'prueft';
+    if (update.githubReachable === false) return 'GitHub offline';
+    if (update.updateAvailable) return `${update.behind || 1} Update${Number(update.behind || 1) === 1 ? '' : 's'}`;
+    if (update.githubReachable === true) return 'aktuell';
+    return update.state || 'unbekannt';
+  }
+
+  async function checkSystemUpdate(quiet = false) {
+    if (!canCheckSystemUpdate()) return;
+    try {
+      const response = await api('/api/system/update/check', { method: 'POST', quiet: true });
+      const data = await response.json();
+      status = { ...status, systemUpdate: data.update };
+      if (!quiet) notice = `Update-Pruefung: ${systemUpdateLabel(data.update)}`;
+      bumpView();
+    } catch (err) {
+      if (!quiet) error = `Update-Pruefung: ${err.message}`;
+    }
+  }
+
   async function runSystemUpdate() {
+    if (!canRunSystemUpdate()) return;
     if (!window.confirm('Update starten? Die Bridge zieht Git, baut neu und startet den Service neu.')) return;
     const response = await api('/api/system/update', { method: 'POST' });
     const data = await response.json();
@@ -1196,7 +1235,7 @@
       <span class:ok={status.midi?.outputConnected} class="pill">MIDI Out {status.midi?.outputConnected ? 'ok' : 'off'}</span>
       <span class:ok={status.osc?.ready} class="pill">OSC {status.osc?.ready ? 'ready' : 'off'}</span>
       <span class:ok={status.oscResync?.enabled} class="pill">Resync {status.oscResync?.enabled ? `${Math.round((status.oscResync?.intervalMs || 0) / 1000)}s` : 'aus'}</span>
-      <span class:ok={status.systemUpdate?.state === 'completed'} class="pill">Update {status.systemUpdate?.state || 'idle'}</span>
+      <span class:ok={status.systemUpdate?.updateAvailable} class="pill">Update {systemUpdateLabel()}</span>
     </div>
   </header>
 
@@ -1209,7 +1248,8 @@
           <button class="secondary" on:click={reconnect}>Neu verbinden</button>
           <button class="secondary" on:click={resyncOscStates}>OSC Resync jetzt</button>
           {#if status.network?.platform === 'linux'}
-            <button class="secondary" disabled={status.systemUpdate?.running} on:click={runSystemUpdate}>Update</button>
+            <button class="secondary" disabled={!canCheckSystemUpdate()} on:click={() => checkSystemUpdate(false)}>Update pruefen</button>
+            <button class="secondary" disabled={!canRunSystemUpdate()} on:click={runSystemUpdate}>Update installieren</button>
           {/if}
         </div>
       </div>
@@ -1290,8 +1330,16 @@
           />
         </label>
       </div>
-      {#if status.systemUpdate?.state && status.systemUpdate.state !== 'idle'}
-        <p class="hint">Update: {status.systemUpdate.step || status.systemUpdate.state} {status.systemUpdate.error ? `- ${status.systemUpdate.error}` : ''}</p>
+      {#if status.network?.platform === 'linux'}
+        <p class="hint">
+          Update: {systemUpdateLabel()}
+          {#if status.systemUpdate?.checkedAt}
+            - zuletzt geprueft {new Date(status.systemUpdate.checkedAt).toLocaleTimeString()}
+          {/if}
+          {#if status.systemUpdate?.error}
+            - {status.systemUpdate.error}
+          {/if}
+        </p>
       {/if}
     </section>
 

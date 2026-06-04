@@ -30,6 +30,7 @@ let lastNetworkApply = null;
 let lastNetworkBackupApply = null;
 let lastOscResync = null;
 let systemUpdateRunning = false;
+let systemUpdateCheckRunning = false;
 const SYSTEM_UPDATE_STATUS_PATH = path.join(DATA_DIR, 'system-update.json');
 const SYSTEM_UPDATE_LOG_PATH = path.join(DATA_DIR, 'system-update.log');
 
@@ -470,6 +471,17 @@ app.post('/api/led/refresh', (req, res) => {
 
 app.get('/api/system/update', (req, res) => {
   res.json(systemUpdateStatus({ includeLog: true }));
+});
+
+app.post('/api/system/update/check', (req, res) => {
+  try {
+    const update = startSystemUpdateCheck();
+    broadcast('status', status());
+    res.json({ ok: true, update });
+  } catch (error) {
+    reportError(error, 'system-update-check');
+    res.status(400).json({ ok: false, error: error.message, update: systemUpdateStatus({ includeLog: true }) });
+  }
 });
 
 app.post('/api/system/update', (req, res) => {
@@ -1033,9 +1045,15 @@ function systemUpdateStatus(options = {}) {
   const statusData = {
     state: 'idle',
     running: systemUpdateRunning,
+    checking: systemUpdateCheckRunning,
+    githubReachable: null,
+    updateAvailable: false,
+    behind: 0,
     serviceName: systemServiceName(),
     ...(current || {}),
-    running: systemUpdateRunning || current?.state === 'running' || current?.state === 'restarting'
+    running: systemUpdateRunning || current?.state === 'running' || current?.state === 'restarting',
+    checking: systemUpdateCheckRunning || current?.state === 'checking',
+    updateAvailable: current?.updateAvailable === true || Number(current?.behind || 0) > 0
   };
 
   if (options.includeLog) {
@@ -1045,13 +1063,76 @@ function systemUpdateStatus(options = {}) {
   return statusData;
 }
 
+function startSystemUpdateCheck() {
+  if (systemUpdateRunning) {
+    throw new Error('Update laeuft bereits.');
+  }
+
+  if (systemUpdateCheckRunning) {
+    return systemUpdateStatus({ includeLog: true });
+  }
+
+  if (process.platform !== 'linux') {
+    throw new Error('Update-Pruefung per GUI ist nur auf dem Raspberry Pi/Linux aktiv.');
+  }
+
+  systemUpdateCheckRunning = true;
+  fs.mkdirSync(DATA_DIR, { recursive: true });
+  fs.writeFileSync(SYSTEM_UPDATE_LOG_PATH, '', 'utf8');
+  writeSystemUpdateStatus({
+    ...readSystemUpdateStatus(),
+    state: 'checking',
+    running: false,
+    checking: true,
+    updateAvailable: false,
+    githubReachable: null,
+    step: 'git-fetch',
+    checkedStartedAt: new Date().toISOString(),
+    serviceName: systemServiceName(),
+    error: ''
+  });
+
+  runSystemUpdateCheck().catch((error) => {
+    appendSystemUpdateLog(`FEHLER: ${error.message}`);
+    writeSystemUpdateStatus({
+      ...readSystemUpdateStatus(),
+      state: 'github-offline',
+      running: false,
+      checking: false,
+      updateAvailable: false,
+      githubReachable: false,
+      step: 'failed',
+      error: error.message,
+      checkedAt: new Date().toISOString(),
+      serviceName: systemServiceName()
+    });
+    systemUpdateCheckRunning = false;
+    broadcast('status', status());
+  });
+
+  return systemUpdateStatus({ includeLog: true });
+}
+
 function startSystemUpdate() {
   if (systemUpdateRunning) {
     throw new Error('Update laeuft bereits.');
   }
 
+  if (systemUpdateCheckRunning) {
+    throw new Error('Update-Pruefung laeuft gerade.');
+  }
+
   if (process.platform !== 'linux') {
     throw new Error('System-Update per GUI ist nur auf dem Raspberry Pi/Linux aktiv.');
+  }
+
+  const current = systemUpdateStatus();
+  if (current.githubReachable !== true) {
+    throw new Error('GitHub ist aktuell nicht erreichbar. Bitte erst Update pruefen.');
+  }
+
+  if (current.updateAvailable !== true) {
+    throw new Error('Kein Update verfuegbar.');
   }
 
   systemUpdateRunning = true;
@@ -1083,6 +1164,34 @@ function startSystemUpdate() {
   return systemUpdateStatus({ includeLog: true });
 }
 
+async function runSystemUpdateCheck() {
+  appendSystemUpdateLog('Update-Pruefung gestartet.');
+  await runSystemUpdateCommand('Git Fetch', 'git', ['fetch', '--prune']);
+
+  writeSystemUpdateStatus({ ...readSystemUpdateStatus(), step: 'check-update' });
+  const updateInfo = await checkGitUpdateAvailable();
+  writeSystemUpdateStatus({
+    ...readSystemUpdateStatus(),
+    state: updateInfo.behind > 0 ? 'update-available' : 'up-to-date',
+    running: false,
+    checking: false,
+    updateAvailable: updateInfo.behind > 0,
+    githubReachable: true,
+    step: updateInfo.behind > 0 ? 'update-available' : 'up-to-date',
+    checkedAt: new Date().toISOString(),
+    head: updateInfo.head,
+    upstream: updateInfo.upstream,
+    upstreamHead: updateInfo.upstreamHead,
+    behind: updateInfo.behind,
+    error: ''
+  });
+  appendSystemUpdateLog(`Aktueller Stand: ${updateInfo.head}`);
+  appendSystemUpdateLog(`Upstream: ${updateInfo.upstream} (${updateInfo.upstreamHead})`);
+  appendSystemUpdateLog(`Commits hinter Upstream: ${updateInfo.behind}`);
+  systemUpdateCheckRunning = false;
+  broadcast('status', status());
+}
+
 async function runSystemUpdate() {
   appendSystemUpdateLog('Update gestartet.');
   writeSystemUpdateStatus({ ...readSystemUpdateStatus(), step: 'git-fetch' });
@@ -1104,7 +1213,9 @@ async function runSystemUpdate() {
       head: updateInfo.head,
       upstream: updateInfo.upstream,
       upstreamHead: updateInfo.upstreamHead,
-      behind: updateInfo.behind
+      behind: updateInfo.behind,
+      githubReachable: true,
+      updateAvailable: false
     });
     appendSystemUpdateLog('Kein Update vorhanden. Build und Neustart werden uebersprungen.');
     systemUpdateRunning = false;
@@ -1112,7 +1223,13 @@ async function runSystemUpdate() {
     return;
   }
 
-  writeSystemUpdateStatus({ ...readSystemUpdateStatus(), step: 'git-pull', behind: updateInfo.behind });
+  writeSystemUpdateStatus({
+    ...readSystemUpdateStatus(),
+    step: 'git-pull',
+    behind: updateInfo.behind,
+    githubReachable: true,
+    updateAvailable: true
+  });
   await runSystemUpdateCommand('Git Pull', 'git', ['pull', '--ff-only']);
 
   writeSystemUpdateStatus({ ...readSystemUpdateStatus(), step: 'build' });
@@ -1122,6 +1239,9 @@ async function runSystemUpdate() {
     ...readSystemUpdateStatus(),
     state: 'restarting',
     running: true,
+    updateAvailable: false,
+    behind: 0,
+    githubReachable: true,
     step: 'restart',
     restartingAt: new Date().toISOString()
   });
@@ -1245,6 +1365,9 @@ function markSystemUpdateAfterStartup() {
       ...current,
       state: 'completed',
       running: false,
+      checking: false,
+      updateAvailable: false,
+      behind: 0,
       step: 'completed',
       completedAt: new Date().toISOString()
     });
@@ -1254,6 +1377,7 @@ function markSystemUpdateAfterStartup() {
       ...current,
       state: 'failed',
       running: false,
+      checking: false,
       step: 'failed',
       error: 'Server wurde waehrend des Updates beendet.',
       failedAt: new Date().toISOString()
