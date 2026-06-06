@@ -1,5 +1,6 @@
 const path = require('path');
 const fs = require('fs');
+const os = require('os');
 const express = require('express');
 const cors = require('cors');
 const http = require('http');
@@ -31,6 +32,9 @@ let lastNetworkBackupApply = null;
 let lastOscResync = null;
 let systemUpdateRunning = false;
 let systemUpdateCheckRunning = false;
+let lastSystemCpuSample = null;
+let lastProcessCpuSample = null;
+let lastNetworkTrafficSample = null;
 const SERVER_STARTED_AT = new Date().toISOString();
 const SERVER_BOOT_ID = `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 const SYSTEM_UPDATE_GIT_TIMEOUT_MS = Number(process.env.AKAI_MAGICQ_UPDATE_GIT_TIMEOUT_MS || 15000);
@@ -107,6 +111,7 @@ function status() {
     playbackState,
     oscResync: oscResyncStatus(),
     systemUpdate: systemUpdateStatus(),
+    performance: performanceStatus(),
     liveInput: liveInputState
   };
 }
@@ -1445,6 +1450,108 @@ function runDiagnosticCommand(title, bin, args = []) {
       });
     });
   });
+}
+
+function performanceStatus() {
+  const memoryTotal = os.totalmem();
+  const memoryFree = os.freemem();
+  const memoryUsed = Math.max(0, memoryTotal - memoryFree);
+  return {
+    at: new Date().toISOString(),
+    platform: process.platform,
+    cpu: {
+      systemPercent: systemCpuPercent(),
+      processPercent: processCpuPercent(),
+      loadAverage: os.loadavg(),
+      cores: os.cpus()?.length || 1
+    },
+    memory: {
+      total: memoryTotal,
+      free: memoryFree,
+      used: memoryUsed,
+      usedPercent: memoryTotal ? Math.round((memoryUsed / memoryTotal) * 100) : null,
+      processRss: process.memoryUsage().rss
+    },
+    traffic: networkTrafficRate()
+  };
+}
+
+function systemCpuPercent() {
+  const sample = readLinuxCpuSample();
+  if (!sample) return null;
+  const previous = lastSystemCpuSample;
+  lastSystemCpuSample = sample;
+  if (!previous) return null;
+  const totalDelta = sample.total - previous.total;
+  const idleDelta = sample.idle - previous.idle;
+  if (totalDelta <= 0) return null;
+  return Math.max(0, Math.min(100, Math.round(((totalDelta - idleDelta) / totalDelta) * 100)));
+}
+
+function readLinuxCpuSample() {
+  if (process.platform !== 'linux') return null;
+  try {
+    const line = fs.readFileSync('/proc/stat', 'utf8').split('\n')[0] || '';
+    const parts = line.trim().split(/\s+/).slice(1).map(Number);
+    if (parts.length < 4 || parts.some((value) => !Number.isFinite(value))) return null;
+    const idle = (parts[3] || 0) + (parts[4] || 0);
+    const total = parts.reduce((sum, value) => sum + value, 0);
+    return { idle, total, at: Date.now() };
+  } catch {
+    return null;
+  }
+}
+
+function processCpuPercent() {
+  const now = Date.now();
+  const usage = process.cpuUsage();
+  const previous = lastProcessCpuSample;
+  lastProcessCpuSample = { usage, at: now };
+  if (!previous) return null;
+  const elapsedMs = now - previous.at;
+  if (elapsedMs <= 0) return null;
+  const usedMicros = usage.user + usage.system - previous.usage.user - previous.usage.system;
+  const cores = os.cpus()?.length || 1;
+  return Math.max(0, Math.round((usedMicros / 1000 / elapsedMs / cores) * 100));
+}
+
+function networkTrafficRate() {
+  const sample = readLinuxNetworkTraffic();
+  if (!sample) return { supported: false, rxBytesPerSec: null, txBytesPerSec: null, rxTotal: null, txTotal: null };
+  const previous = lastNetworkTrafficSample;
+  lastNetworkTrafficSample = sample;
+  if (!previous) {
+    return { supported: true, rxBytesPerSec: null, txBytesPerSec: null, rxTotal: sample.rxBytes, txTotal: sample.txBytes };
+  }
+  const elapsedSeconds = Math.max(0.001, (sample.at - previous.at) / 1000);
+  return {
+    supported: true,
+    rxBytesPerSec: Math.max(0, Math.round((sample.rxBytes - previous.rxBytes) / elapsedSeconds)),
+    txBytesPerSec: Math.max(0, Math.round((sample.txBytes - previous.txBytes) / elapsedSeconds)),
+    rxTotal: sample.rxBytes,
+    txTotal: sample.txBytes
+  };
+}
+
+function readLinuxNetworkTraffic() {
+  if (process.platform !== 'linux') return null;
+  try {
+    const lines = fs.readFileSync('/proc/net/dev', 'utf8').split('\n').slice(2);
+    let rxBytes = 0;
+    let txBytes = 0;
+    for (const line of lines) {
+      const [rawName, rawValues] = line.split(':');
+      const name = String(rawName || '').trim();
+      if (!name || name === 'lo' || !rawValues) continue;
+      const values = rawValues.trim().split(/\s+/).map(Number);
+      if (values.length < 16) continue;
+      rxBytes += Number(values[0] || 0);
+      txBytes += Number(values[8] || 0);
+    }
+    return { rxBytes, txBytes, at: Date.now() };
+  } catch {
+    return null;
+  }
 }
 
 function readSystemUpdateStatus() {

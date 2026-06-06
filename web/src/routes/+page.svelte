@@ -1137,6 +1137,30 @@
     return Math.round(Number(bytes || 0) / 1024 / 1024);
   }
 
+  function percentText(value) {
+    return value === null || value === undefined ? '-' : `${Math.round(Number(value))}%`;
+  }
+
+  function byteRateText(value) {
+    if (value === null || value === undefined) return '-';
+    const units = ['B/s', 'KB/s', 'MB/s', 'GB/s'];
+    let next = Math.max(0, Number(value || 0));
+    let unit = 0;
+    while (next >= 1024 && unit < units.length - 1) {
+      next /= 1024;
+      unit += 1;
+    }
+    return `${next >= 10 || unit === 0 ? next.toFixed(0) : next.toFixed(1)} ${units[unit]}`;
+  }
+
+  function performanceCpuText() {
+    return percentText(status.performance?.cpu?.systemPercent ?? status.performance?.cpu?.processPercent);
+  }
+
+  function performanceRamText() {
+    return `${percentText(status.performance?.memory?.usedPercent)} / ${memoryMegabytes(status.performance?.memory?.used)} MB`;
+  }
+
   async function saveConnection() {
     const response = await api('/api/config', { method: 'POST', body: config });
     config = await response.json();
@@ -1465,6 +1489,15 @@
       <span class:ok={status.oscResync?.enabled} class="pill">Resync {status.oscResync?.enabled ? `${Math.round((status.oscResync?.intervalMs || 0) / 1000)}s` : 'aus'}</span>
       <span class:ok={systemUpdateHeaderOk} class="pill">Update {systemUpdateHeaderLabel}</span>
     </div>
+    {#if status.performance}
+      <div class="performance-strip">
+        <div><strong>CPU</strong><span>{performanceCpuText()}</span></div>
+        <div><strong>RAM</strong><span>{performanceRamText()}</span></div>
+        <div><strong>RX</strong><span>{byteRateText(status.performance.traffic?.rxBytesPerSec)}</span></div>
+        <div><strong>TX</strong><span>{byteRateText(status.performance.traffic?.txBytesPerSec)}</span></div>
+        <div><strong>App</strong><span>{memoryMegabytes(status.performance.memory?.processRss)} MB</span></div>
+      </div>
+    {/if}
   </header>
 
   {#if config}
@@ -2109,16 +2142,22 @@
   :global(body) { margin: 0; background: #101412; color: #f3f7f1; font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
   main { width: min(1540px, calc(100vw - 28px)); margin: 0 auto; padding: 18px 0 36px; }
   .topbar, section { border: 1px solid #2d372f; background: #171d19; border-radius: 8px; }
-  .topbar { display: flex; justify-content: space-between; align-items: center; gap: 18px; padding: 18px 20px; margin-bottom: 14px; }
+  .topbar { display: grid; grid-template-columns: minmax(320px, 1fr) auto; grid-template-areas: 'brand status' 'brand performance'; align-items: center; gap: 10px 18px; padding: 18px 20px; margin-bottom: 14px; }
   h1, h2, p { margin: 0; }
   h1 { font-size: 28px; line-height: 1.05; }
   h2 { font-size: 17px; }
-  .brand-block { display: grid; gap: 6px; max-width: 700px; }
+  .brand-block { grid-area: brand; display: grid; gap: 6px; max-width: 700px; }
   .eyebrow { color: #9ff0b7; font-size: 12px; font-weight: 900; letter-spacing: 0.08em; text-transform: uppercase; }
   .topbar p, .empty { color: #b5c3b7; }
   .powered { color: #7f8d82; font-size: 12px; font-weight: 800; letter-spacing: 0; }
   section { padding: 16px; margin-bottom: 14px; }
   .section-head, .actions, .status-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+  .topbar > .status-row { grid-area: status; justify-content: flex-end; }
+  .performance-strip { grid-area: performance; display: grid; grid-template-columns: repeat(5, minmax(68px, auto)); justify-content: flex-end; gap: 8px; }
+  .performance-strip div { min-height: 38px; padding: 6px 9px; border: 1px solid #2d372f; border-radius: 6px; background: #111612; }
+  .performance-strip strong, .performance-strip span { display: block; white-space: nowrap; }
+  .performance-strip strong { color: #9cac9d; font-size: 10px; font-weight: 900; }
+  .performance-strip span { color: #d7f6d2; font-size: 12px; font-weight: 950; }
   .section-head { margin-bottom: 12px; }
   .pill { border: 1px solid #5a3a3a; color: #ffb8a8; border-radius: 999px; padding: 5px 9px; font-size: 12px; font-weight: 800; }
   .pill.ok { border-color: #49825c; color: #9ff0b7; }
@@ -2205,5 +2244,5 @@
   .monitor-grid { display: grid; grid-template-columns: repeat(4, minmax(180px, 1fr)); gap: 12px; }
   .loading { min-height: 220px; display: grid; place-items: center; color: #aebdae; }
   @media (max-width: 1120px) { .workspace, .connection .fields, .network-fields, .ip-list, .live-strip, .log-grid, .monitor-grid { grid-template-columns: 1fr; } .connection-options { grid-template-columns: repeat(2, minmax(180px, 1fr)); } }
-  @media (max-width: 720px) { main { width: calc(100vw - 18px); } .topbar { align-items: flex-start; flex-direction: column; } .controller { grid-template-columns: 1fr; grid-template-areas: 'matrix' 'scenes' 'controls' 'faders'; } .matrix, .scenes, .controls, .faders, .bulk-options { grid-template-columns: repeat(4, minmax(0, 1fr)); } .bulk-options, .connection-options { grid-template-columns: 1fr; } }
+  @media (max-width: 720px) { main { width: calc(100vw - 18px); } .topbar { grid-template-columns: 1fr; grid-template-areas: 'brand' 'status' 'performance'; align-items: flex-start; } .topbar > .status-row { justify-content: flex-start; } .performance-strip { width: 100%; grid-template-columns: repeat(2, minmax(0, 1fr)); justify-content: stretch; } .controller { grid-template-columns: 1fr; grid-template-areas: 'matrix' 'scenes' 'controls' 'faders'; } .matrix, .scenes, .controls, .faders, .bulk-options { grid-template-columns: repeat(4, minmax(0, 1fr)); } .bulk-options, .connection-options { grid-template-columns: 1fr; } }
 </style>
