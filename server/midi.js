@@ -26,6 +26,7 @@ class MidiBridge extends EventEmitter {
     this.connectedAt = '';
     this.lastEventAt = '';
     this.lastError = '';
+    this.inputHandlers = [];
   }
 
   listDevices(options = {}) {
@@ -86,6 +87,10 @@ class MidiBridge extends EventEmitter {
     const keepExisting = Boolean(options.keepExisting);
     const force = Boolean(options.force);
 
+    if (force) {
+      this.close();
+    }
+
     if (keepExisting) {
       const wantsInput = Boolean(config.midi.input) || Boolean(inputName);
       const wantsOutput = Boolean(config.midi.output) || Boolean(outputName);
@@ -127,6 +132,7 @@ class MidiBridge extends EventEmitter {
       this.lastError = '';
     } catch (error) {
       this.lastError = error.message;
+      this.close();
       this.emit('error', error);
       this.emit('status', this.getStatus(error));
       return this.getStatus(error);
@@ -151,9 +157,14 @@ class MidiBridge extends EventEmitter {
       });
     };
 
-    this.input.on('noteon', forward('noteon'));
-    this.input.on('noteoff', forward('noteoff'));
-    this.input.on('cc', forward('cc'));
+    this.inputHandlers = [
+      ['noteon', forward('noteon')],
+      ['noteoff', forward('noteoff')],
+      ['cc', forward('cc')]
+    ];
+    for (const [eventName, handler] of this.inputHandlers) {
+      this.input.on(eventName, handler);
+    }
   }
 
   close() {
@@ -166,6 +177,10 @@ class MidiBridge extends EventEmitter {
   closeInput() {
     if (this.input) {
       try {
+        for (const [eventName, handler] of this.inputHandlers || []) {
+          if (this.input.off) this.input.off(eventName, handler);
+          else if (this.input.removeListener) this.input.removeListener(eventName, handler);
+        }
         if (this.input._input?.removeAllListeners) this.input._input.removeAllListeners('message');
         if (this.input.removeAllListeners) this.input.removeAllListeners();
         this.input.close();
@@ -178,6 +193,7 @@ class MidiBridge extends EventEmitter {
 
     this.input = null;
     this.inputName = '';
+    this.inputHandlers = [];
   }
 
   closeOutput() {

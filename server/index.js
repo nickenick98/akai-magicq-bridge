@@ -35,8 +35,11 @@ let systemUpdateCheckRunning = false;
 let lastSystemCpuSample = null;
 let lastProcessCpuSample = null;
 let lastNetworkTrafficSample = null;
+const journalErrorState = new Map();
 const SERVER_STARTED_AT = new Date().toISOString();
 const SERVER_BOOT_ID = `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+const DEBUG_EVENTS = process.env.AKAI_MAGICQ_DEBUG_EVENTS === '1';
+const JOURNAL_ERROR_REPEAT_MS = Number(process.env.AKAI_MAGICQ_JOURNAL_ERROR_REPEAT_MS || 60000);
 const SYSTEM_UPDATE_GIT_TIMEOUT_MS = Number(process.env.AKAI_MAGICQ_UPDATE_GIT_TIMEOUT_MS || 15000);
 const SYSTEM_UPDATE_STATUS_PATH = path.join(DATA_DIR, 'system-update.json');
 const SYSTEM_UPDATE_LOG_PATH = path.join(DATA_DIR, 'system-update.log');
@@ -87,9 +90,28 @@ function reportError(error, source = 'server') {
     message: error.message || String(error),
     at: new Date().toISOString()
   };
-  console.error(`[${source}]`, data.message);
+  logErrorThrottled(source, data.message);
   remember('errors', data);
   broadcast('error', data);
+}
+
+function logErrorThrottled(source, message) {
+  const key = `${source}:${message}`;
+  const now = Date.now();
+  const state = journalErrorState.get(key) || { at: 0, suppressed: 0 };
+  if (now - state.at < JOURNAL_ERROR_REPEAT_MS) {
+    state.suppressed += 1;
+    journalErrorState.set(key, state);
+    return;
+  }
+
+  const suffix = state.suppressed ? ` (${state.suppressed} Wiederholungen unterdrückt)` : '';
+  console.error(`[${source}]`, `${message}${suffix}`);
+  journalErrorState.set(key, { at: now, suppressed: 0 });
+}
+
+function logEvent(label, data) {
+  if (DEBUG_EVENTS) console.log(label, data);
 }
 
 function status() {
@@ -173,7 +195,7 @@ function reconnect(options = {}) {
 }
 
 midi.on('midi', (event) => {
-  console.log('[midi]', event);
+  logEvent('[midi]', event);
   remember('midi', event);
   updateLiveInput(event);
   broadcast('midi-event', event);
@@ -315,20 +337,20 @@ midi.on('error', (error) => reportError(error, 'midi'));
 led.on('error', (error) => reportError(error, 'led'));
 
 osc.on('sent', (data) => {
-  console.log('[osc:sent]', data);
+  logEvent('[osc:sent]', data);
   remember('oscSent', data);
   broadcast('osc-sent', data);
 });
 
 osc.on('received', (data) => {
-  console.log('[osc:received]', data);
+  logEvent('[osc:received]', data);
   remember('oscReceived', data);
   updateFromOscFeedback(data);
   broadcast('osc-received', data);
 });
 
 osc.on('ignored', (data) => {
-  console.warn('[osc:ignored]', data);
+  logEvent('[osc:ignored]', data);
   remember('errors', { source: 'osc-ignored', ...data });
   broadcast('error', { source: 'osc-ignored', ...data });
   broadcast('status', status());
@@ -794,7 +816,7 @@ function watchMidiDevices() {
 
 function rememberMidiWatch(message, details = {}) {
   const now = Date.now();
-  if (now - lastMidiWatchReportAt < 3000) return;
+  if (now - lastMidiWatchReportAt < 30000) return;
   lastMidiWatchReportAt = now;
   const data = {
     source: 'midi-watch',
@@ -802,7 +824,7 @@ function rememberMidiWatch(message, details = {}) {
     details,
     at: new Date().toISOString()
   };
-  console.warn('[midi-watch]', message, details);
+  logErrorThrottled('midi-watch', message);
   remember('errors', data);
   broadcast('error', data);
 }
@@ -853,7 +875,7 @@ function shouldBlockInternalShiftCombo(sourceType, event) {
 
 function rememberShiftGuard(sourceType, event) {
   const now = Date.now();
-  if (now - lastShiftGuardReportAt < 1000) return;
+  if (now - lastShiftGuardReportAt < 30000) return;
   lastShiftGuardReportAt = now;
   const data = {
     source: 'shift-guard',
@@ -866,7 +888,7 @@ function rememberShiftGuard(sourceType, event) {
     },
     at: new Date().toISOString()
   };
-  console.warn('[shift-guard]', data.message, data.details);
+  logErrorThrottled('shift-guard', data.message);
   remember('errors', data);
   broadcast('error', data);
 }

@@ -37,6 +37,16 @@ fi
 echo "Ensuring NetworkManager is enabled..."
 sudo systemctl enable --now NetworkManager >/dev/null 2>&1 || true
 
+echo "Limiting journald disk usage..."
+sudo mkdir -p /etc/systemd/journald.conf.d
+cat <<EOF | sudo tee /etc/systemd/journald.conf.d/akai-bridge.conf >/dev/null
+[Journal]
+SystemMaxUse=64M
+RuntimeMaxUse=32M
+EOF
+sudo systemctl restart systemd-journald >/dev/null 2>&1 || true
+sudo journalctl --vacuum-size=64M >/dev/null 2>&1 || true
+
 echo "Preparing ownership and user groups..."
 sudo mkdir -p "$(dirname "$APP_DIR")"
 sudo chown -R "$APP_USER:$APP_USER" "$APP_DIR"
