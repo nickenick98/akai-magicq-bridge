@@ -3,7 +3,7 @@ const fs = require('fs');
 const express = require('express');
 const cors = require('cors');
 const http = require('http');
-const { spawn } = require('child_process');
+const { execFile, spawn } = require('child_process');
 const { WebSocket, WebSocketServer } = require('ws');
 
 const { DATA_DIR, readConfig, readState, updateConfig, writeConfig, writeState } = require('./config');
@@ -549,6 +549,16 @@ app.post('/api/page', (req, res) => {
 
 app.get('/api/status', (req, res) => {
   res.json({ ...status(), recent });
+});
+
+app.get('/api/logs', async (req, res) => {
+  const lines = Math.min(800, Math.max(20, Number(req.query.lines || 200)));
+  try {
+    res.json(await collectDiagnostics(lines));
+  } catch (error) {
+    reportError(error, 'logs');
+    res.status(500).json({ ok: false, error: error.message });
+  }
 });
 
 wss.on('connection', (socket) => {
@@ -1382,6 +1392,59 @@ function systemServiceName() {
 function systemServiceUnitName() {
   const service = systemServiceName();
   return service.endsWith('.service') ? service : `${service}.service`;
+}
+
+async function collectDiagnostics(lines = 200) {
+  const safeLines = Math.min(800, Math.max(20, Number(lines || 200)));
+  const commands = [];
+
+  if (process.platform === 'linux') {
+    commands.push(
+      ['Service Journal', 'journalctl', ['-u', systemServiceUnitName(), '-n', String(safeLines), '--no-pager', '--output=short-iso']],
+      ['Kernel / USB / Power', 'dmesg', ['-T']],
+      ['Pi Unterspannung', 'vcgencmd', ['get_throttled']],
+      ['Speicher', 'free', ['-h']],
+      ['Laufzeit / Last', 'uptime', []],
+      ['Speicherplatz', 'df', ['-h', '/']],
+      ['ALSA MIDI', 'aconnect', ['-l']]
+    );
+  }
+
+  const results = await Promise.all(commands.map(([title, bin, args]) => runDiagnosticCommand(title, bin, args)));
+  return {
+    ok: true,
+    platform: process.platform,
+    serviceName: systemServiceName(),
+    serviceUnit: systemServiceUnitName(),
+    lines: safeLines,
+    generatedAt: new Date().toISOString(),
+    server: {
+      startedAt: SERVER_STARTED_AT,
+      bootId: SERVER_BOOT_ID,
+      uptimeSeconds: Math.round(process.uptime()),
+      pid: process.pid,
+      memory: process.memoryUsage()
+    },
+    status: status(),
+    recent,
+    logs: results
+  };
+}
+
+function runDiagnosticCommand(title, bin, args = []) {
+  const commandText = [bin, ...args].join(' ');
+  return new Promise((resolve) => {
+    execFile(bin, args, { timeout: 8000, maxBuffer: 1024 * 1024 }, (error, stdout = '', stderr = '') => {
+      resolve({
+        title,
+        command: commandText,
+        ok: !error,
+        stdout: String(stdout || '').slice(-60000),
+        stderr: String(stderr || '').slice(-12000),
+        error: error ? error.message : ''
+      });
+    });
+  });
 }
 
 function readSystemUpdateStatus() {

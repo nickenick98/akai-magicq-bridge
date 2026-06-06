@@ -114,6 +114,7 @@
   let pollTimer = null;
   let ledClockTimer = null;
   let systemUpdateTimer = null;
+  let diagnosticsTimer = null;
   let systemUpdatePollUntil = 0;
   let ledClock = Date.now();
   let serverBootId = '';
@@ -128,6 +129,7 @@
   let notice = '';
   let error = '';
   let viewRevision = 0;
+  let diagnostics = { loading: false, auto: false, lines: 200, data: null, error: '' };
 
   let quickMapEnabled = false;
   let bulkLed = { offColor: 5, offMode: 'solid', onColor: 21, activeMode: 'solid' };
@@ -178,6 +180,7 @@
   onDestroy(() => {
     if (pollTimer) clearInterval(pollTimer);
     if (ledClockTimer) clearInterval(ledClockTimer);
+    stopDiagnosticsAutoRefresh();
     stopSystemUpdatePoll();
     if (ws) ws.close();
   });
@@ -1096,6 +1099,44 @@
     }
   }
 
+  async function refreshDiagnostics() {
+    diagnostics = { ...diagnostics, loading: true, error: '' };
+    try {
+      const lines = Math.min(800, Math.max(20, Number(diagnostics.lines || 200)));
+      const response = await fetch(`/api/logs?lines=${lines}`, { cache: 'no-store' });
+      if (!response.ok) throw new Error(await response.text());
+      diagnostics = { ...diagnostics, loading: false, lines, data: await response.json(), error: '' };
+    } catch (err) {
+      diagnostics = { ...diagnostics, loading: false, error: err.message };
+    }
+  }
+
+  function setDiagnosticsAutoRefresh(value) {
+    diagnostics = { ...diagnostics, auto: value };
+    stopDiagnosticsAutoRefresh();
+    if (value) {
+      refreshDiagnostics();
+      diagnosticsTimer = setInterval(refreshDiagnostics, 5000);
+    }
+  }
+
+  function stopDiagnosticsAutoRefresh() {
+    if (diagnosticsTimer) {
+      clearInterval(diagnosticsTimer);
+      diagnosticsTimer = null;
+    }
+  }
+
+  function diagnosticText(entry) {
+    return [entry?.stdout, entry?.stderr ? `STDERR:\n${entry.stderr}` : '', entry?.error && !entry?.ok ? `FEHLER:\n${entry.error}` : '']
+      .filter(Boolean)
+      .join('\n\n') || 'Keine Ausgabe';
+  }
+
+  function memoryMegabytes(bytes) {
+    return Math.round(Number(bytes || 0) / 1024 / 1024);
+  }
+
   async function saveConnection() {
     const response = await api('/api/config', { method: 'POST', body: config });
     config = await response.json();
@@ -1968,6 +2009,64 @@
       </section>
     </div>
 
+    <section class="diagnostics">
+      <div class="section-head">
+        <div>
+          <h2>Fehlersuche & Logs</h2>
+          <p class="hint">Service-Logs, Kernelmeldungen und Pi-Diagnose direkt aus der laufenden Bridge.</p>
+        </div>
+        <div class="actions">
+          <label class="inline-control">
+            <span>Zeilen</span>
+            <input type="number" min="20" max="800" step="20" bind:value={diagnostics.lines} />
+          </label>
+          <label class="option-toggle compact">
+            <input
+              type="checkbox"
+              checked={diagnostics.auto}
+              on:change={(event) => setDiagnosticsAutoRefresh(event.currentTarget.checked)}
+            />
+            <span>Auto</span>
+          </label>
+          <button class="secondary" disabled={diagnostics.loading} on:click={refreshDiagnostics}>
+            {diagnostics.loading ? 'Lade Logs...' : 'Logs aktualisieren'}
+          </button>
+        </div>
+      </div>
+
+      {#if diagnostics.error}
+        <pre class="command-preview error-preview">{diagnostics.error}</pre>
+      {/if}
+
+      {#if diagnostics.data}
+        <div class="status-row diagnostic-status">
+          <span class="pill ok">Plattform {diagnostics.data.platform}</span>
+          <span class="pill">Service {diagnostics.data.serviceUnit || diagnostics.data.serviceName}</span>
+          <span class="pill">Uptime {diagnostics.data.server?.uptimeSeconds || 0}s</span>
+          <span class="pill">RAM {memoryMegabytes(diagnostics.data.server?.memory?.rss)} MB</span>
+          <span class="pill">Aktualisiert {new Date(diagnostics.data.generatedAt).toLocaleTimeString()}</span>
+        </div>
+
+        {#if diagnostics.data.logs?.length}
+          <div class="log-grid">
+            {#each diagnostics.data.logs as entry}
+              <article class:bad={!entry.ok} class="log-panel">
+                <div>
+                  <h3>{entry.title}</h3>
+                  <span>{entry.command}</span>
+                </div>
+                <pre>{diagnosticText(entry)}</pre>
+              </article>
+            {/each}
+          </div>
+        {:else}
+          <p class="empty">System-Logs sind nur auf Linux/Raspberry verfügbar. Die Live-Events unten funktionieren trotzdem.</p>
+        {/if}
+      {:else}
+        <p class="empty">Noch keine Logs geladen.</p>
+      {/if}
+    </section>
+
     <section class="monitor">
       <div class="monitor-grid">
         <EventList title="MIDI" items={recent.midi} />
@@ -2032,6 +2131,10 @@
   .option-number, .option-select { display: grid; grid-template-columns: 1fr minmax(64px, 98px); align-items: center; gap: 8px; padding: 6px 8px; }
   .option-number span, .option-select span { color: #9cac9d; font-size: 11px; font-weight: 800; }
   .option-number input, .option-select select { min-height: 28px; padding: 5px 7px; }
+  .option-toggle.compact { min-height: 38px; }
+  .inline-control { display: grid; grid-template-columns: auto 72px; align-items: center; gap: 8px; min-height: 38px; padding: 6px 8px; border: 1px solid #2d372f; border-radius: 6px; background: #111612; }
+  .inline-control span { color: #9cac9d; font-size: 11px; font-weight: 800; }
+  .inline-control input { min-height: 28px; padding: 5px 7px; }
   .network-status { justify-content: flex-start; margin-bottom: 12px; }
   .network-fields { grid-template-columns: repeat(3, minmax(150px, 1fr)); }
   .command-preview { margin: 12px 0 0; padding: 12px; overflow: auto; border: 1px solid #263229; border-radius: 6px; background: #0d110f; color: #b8f36d; font-size: 12px; }
@@ -2089,8 +2192,18 @@
   .hint { grid-column: 1 / -1; color: #9cac9d; font-size: 12px; }
   .error { color: #ffb8a8; }
   .notice { color: #9ff0b7; }
+  .diagnostics .section-head { align-items: flex-start; }
+  .diagnostics .section-head .actions { align-items: stretch; flex-wrap: wrap; }
+  .diagnostic-status { justify-content: flex-start; margin: 8px 0 12px; }
+  .log-grid { display: grid; grid-template-columns: repeat(2, minmax(240px, 1fr)); gap: 12px; }
+  .log-panel { min-height: 220px; border: 1px solid #2d372f; border-radius: 8px; background: #111612; padding: 12px; }
+  .log-panel.bad { border-color: #6d3a32; }
+  .log-panel h3 { margin: 0; color: #d6dfd5; font-size: 14px; }
+  .log-panel span { display: block; margin-top: 4px; color: #7f8d80; font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .log-panel pre { max-height: 360px; margin: 10px 0 0; padding: 10px; overflow: auto; border-radius: 6px; background: #090c0a; color: #d7f6d2; font-size: 11px; line-height: 1.35; white-space: pre-wrap; }
+  .log-panel.bad pre { color: #ffccb8; }
   .monitor-grid { display: grid; grid-template-columns: repeat(4, minmax(180px, 1fr)); gap: 12px; }
   .loading { min-height: 220px; display: grid; place-items: center; color: #aebdae; }
-  @media (max-width: 1120px) { .workspace, .connection .fields, .network-fields, .ip-list, .live-strip, .monitor-grid { grid-template-columns: 1fr; } .connection-options { grid-template-columns: repeat(2, minmax(180px, 1fr)); } }
+  @media (max-width: 1120px) { .workspace, .connection .fields, .network-fields, .ip-list, .live-strip, .log-grid, .monitor-grid { grid-template-columns: 1fr; } .connection-options { grid-template-columns: repeat(2, minmax(180px, 1fr)); } }
   @media (max-width: 720px) { main { width: calc(100vw - 18px); } .topbar { align-items: flex-start; flex-direction: column; } .controller { grid-template-columns: 1fr; grid-template-areas: 'matrix' 'scenes' 'controls' 'faders'; } .matrix, .scenes, .controls, .faders, .bulk-options { grid-template-columns: repeat(4, minmax(0, 1fr)); } .bulk-options, .connection-options { grid-template-columns: 1fr; } }
 </style>
