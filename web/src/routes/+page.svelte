@@ -1181,10 +1181,13 @@
     );
   }
 
+  function interfaceIpv4Addresses(interfaces = status.network?.interfaces || []) {
+    return interfaceAddresses(interfaces).filter((address) => address.family === 'IPv4');
+  }
+
   function compactInterfaceAddresses(interfaces = [], limit = 6) {
-    const addresses = interfaceAddresses(interfaces)
+    const addresses = interfaceIpv4Addresses(interfaces)
       .filter((address) => address.name !== 'lo')
-      .filter((address) => address.family === 'IPv4')
       .sort((a, b) => {
         return a.name.localeCompare(b.name);
       });
@@ -1529,13 +1532,13 @@
           <span class="pill ok">Windows</span>
         </div>
         <div class="ip-list">
-          {#each interfaceAddresses() as address}
+          {#each interfaceIpv4Addresses() as address}
             <div>
               <strong>{address.name}</strong>
-              <span>{address.family} {address.cidr || address.address}</span>
+              <span>{address.cidr || address.address}</span>
             </div>
           {:else}
-            <p class="empty">Keine lokalen IP-Adressen gefunden.</p>
+            <p class="empty">Keine lokalen IPv4-Adressen gefunden.</p>
           {/each}
         </div>
       </section>
