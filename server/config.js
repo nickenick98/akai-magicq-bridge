@@ -19,6 +19,7 @@ const APC_DEFAULTS = {
     sendIntroductionOnConnect: false,
     sendIntroductionOnRecovery: false,
     sceneButtonsBlockedOnShift: true,
+    sceneButtonsOnShift: 'blink',
     recoverDelaysMs: [0, 80, 250, 800]
   }
 };
@@ -262,6 +263,9 @@ function normalizeConfig(config) {
   next.apc.shiftBehavior.guardInternalCombos = false;
   next.apc.shiftBehavior.sendIntroductionOnConnect = false;
   next.apc.shiftBehavior.sendIntroductionOnRecovery = false;
+  if (!['off', 'solid', 'blink'].includes(next.apc.shiftBehavior.sceneButtonsOnShift)) {
+    next.apc.shiftBehavior.sceneButtonsOnShift = APC_DEFAULTS.shiftBehavior.sceneButtonsOnShift;
+  }
   next.feedback = {
     localStateUpdates: true,
     oscResyncEnabled: false,

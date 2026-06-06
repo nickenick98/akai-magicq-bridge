@@ -1817,9 +1817,17 @@ function sceneButtonsBlockedByShift() {
 
 function applyShiftSceneBlockedLeds() {
   if (!midi.getStatus().outputConnected) return;
+  const mode = shiftSceneButtonMode();
   for (const note of config.apc.sceneNotes || []) {
-    led.blinkPad(note, 1);
+    if (mode === 'off') led.setPadOff(note);
+    else if (mode === 'solid') led.setPadColor(note, 1);
+    else led.blinkPad(note, 1);
   }
+}
+
+function shiftSceneButtonMode() {
+  const mode = shiftBehavior().sceneButtonsOnShift;
+  return ['off', 'solid', 'blink'].includes(mode) ? mode : 'blink';
 }
 
 function isPageAction(action) {

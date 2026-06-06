@@ -540,7 +540,8 @@
       return { hasMapping: Boolean(mapping), active: activeFor(type, value, mapping), color: 0, mode: 'off' };
     }
     if (sceneButtonsBlockedByShift(type)) {
-      return { hasMapping: Boolean(mapping), active: false, color: 1, mode: 'blink', blocked: true };
+      const mode = shiftSceneButtonMode();
+      return { hasMapping: Boolean(mapping), active: mode !== 'off', color: mode === 'off' ? 0 : 1, mode, blocked: true };
     }
     if (type === 'scene' || type === 'control' || type === 'shift') {
       const liveActive = activeFor(type, value, mapping);
@@ -596,7 +597,7 @@
 
   function readout(type, value) {
     const mapping = mappingFor(type, value);
-    if (sceneButtonsBlockedByShift(type)) return 'Shift block blink';
+    if (sceneButtonsBlockedByShift(type)) return `Seite 2 ${shiftSceneButtonLabel()}`;
     if (!mapping) return 'kein map';
     if (mapping?.target?.type === 'disabled') return 'aus';
     const target = targetReadout(mapping);
@@ -631,7 +632,7 @@
   }
 
   function ledReadout(type, mapping, state) {
-    if (state?.blocked) return 'block blink';
+    if (state?.blocked) return shiftSceneButtonLabel();
     if (type === 'shift') return '';
     if (type === 'scene' || type === 'control' || type === 'shift') {
       const led = mapping?.led || {};
@@ -675,6 +676,18 @@
 
   function sceneButtonsBlockedByShift(type) {
     return isBlockedShiftScene(type);
+  }
+
+  function shiftSceneButtonMode() {
+    const mode = config?.apc?.shiftBehavior?.sceneButtonsOnShift || 'blink';
+    return ['off', 'solid', 'blink'].includes(mode) ? mode : 'blink';
+  }
+
+  function shiftSceneButtonLabel() {
+    const mode = shiftSceneButtonMode();
+    if (mode === 'off') return 'S aus';
+    if (mode === 'solid') return 'S an';
+    return 'S blinkt';
   }
 
   function isBlockedShiftScene(type, layer = activeLayer) {
@@ -1203,6 +1216,7 @@
           sendIntroductionOnConnect: false,
           sendIntroductionOnRecovery: false,
           sceneButtonsBlockedOnShift: true,
+          sceneButtonsOnShift: 'blink',
           recoverDelaysMs: [0, 80, 250, 800],
           ...(config.apc?.shiftBehavior || {}),
           [key]: value,
@@ -1467,6 +1481,17 @@
               value={Math.round((config.feedback?.oscResyncIntervalMs || 10000) / 1000)}
               on:input={(event) => setOscResyncIntervalSeconds(event.currentTarget.value)}
             />
+          </label>
+          <label class="option-select">
+            <span>S-Buttons Seite 2</span>
+            <select
+              value={config.apc?.shiftBehavior?.sceneButtonsOnShift || 'blink'}
+              on:change={(event) => setApcShiftBehavior('sceneButtonsOnShift', event.currentTarget.value)}
+            >
+              <option value="off">aus</option>
+              <option value="solid">an</option>
+              <option value="blink">blinkend</option>
+            </select>
           </label>
         </div>
       </div>
@@ -1998,12 +2023,12 @@
   .ip-pill { border-color: #354a56; color: #9fdfff; background: #10191d; max-width: 240px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .fields, .led-controls { display: grid; grid-template-columns: repeat(2, minmax(160px, 1fr)); gap: 12px; }
   .connection .fields { grid-template-columns: repeat(5, minmax(130px, 1fr)); }
-  .connection-options { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(2, minmax(180px, max-content)) minmax(150px, 190px); gap: 8px; align-items: stretch; }
-  .option-toggle, .option-number { border: 1px solid #2d372f; border-radius: 6px; background: #111612; min-height: 38px; }
+  .connection-options { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(2, minmax(180px, max-content)) minmax(150px, 190px) minmax(160px, 220px); gap: 8px; align-items: stretch; }
+  .option-toggle, .option-number, .option-select { border: 1px solid #2d372f; border-radius: 6px; background: #111612; min-height: 38px; }
   .option-toggle { display: flex; align-items: center; gap: 9px; padding: 8px 10px; color: #d8ecd1; font-size: 12px; font-weight: 800; }
-  .option-number { display: grid; grid-template-columns: 1fr 64px; align-items: center; gap: 8px; padding: 6px 8px; }
-  .option-number span { color: #9cac9d; font-size: 11px; font-weight: 800; }
-  .option-number input { min-height: 28px; padding: 5px 7px; }
+  .option-number, .option-select { display: grid; grid-template-columns: 1fr minmax(64px, 98px); align-items: center; gap: 8px; padding: 6px 8px; }
+  .option-number span, .option-select span { color: #9cac9d; font-size: 11px; font-weight: 800; }
+  .option-number input, .option-select select { min-height: 28px; padding: 5px 7px; }
   .network-status { justify-content: flex-start; margin-bottom: 12px; }
   .network-fields { grid-template-columns: repeat(3, minmax(150px, 1fr)); }
   .command-preview { margin: 12px 0 0; padding: 12px; overflow: auto; border: 1px solid #263229; border-radius: 6px; background: #0d110f; color: #b8f36d; font-size: 12px; }
