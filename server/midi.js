@@ -4,11 +4,19 @@ const fs = require('fs');
 
 let easymidi = null;
 let easymidiLoadError = null;
+let rawMidi = null;
+let rawMidiLoadError = null;
 
 try {
   easymidi = require('easymidi');
 } catch (error) {
   easymidiLoadError = error;
+}
+
+try {
+  rawMidi = require('@julusian/midi');
+} catch (error) {
+  rawMidiLoadError = error;
 }
 
 class MidiBridge extends EventEmitter {
@@ -74,8 +82,8 @@ class MidiBridge extends EventEmitter {
   connect(config = this.config, options = {}) {
     this.config = config;
 
-    if (!easymidi) {
-      const error = new Error(easymidiLoadError ? easymidiLoadError.message : 'easymidi not available');
+    if (!midiRuntimeAvailable()) {
+      const error = new Error(rawMidiLoadError?.message || easymidiLoadError?.message || 'MIDI runtime not available');
       this.emit('error', error);
       this.emit('status', this.getStatus(error));
       return this.getStatus(error);
@@ -118,14 +126,14 @@ class MidiBridge extends EventEmitter {
 
     try {
       if (inputName && !this.input) {
-        this.input = new easymidi.Input(inputName);
+        this.input = createMidiInput(inputName);
         this.inputName = inputName;
         this.connectedAt = new Date().toISOString();
         this.bindInput();
       }
 
       if (outputName && !this.output) {
-        this.output = new easymidi.Output(outputName);
+        this.output = createMidiOutput(outputName);
         this.outputName = outputName;
         this.connectedAt = this.connectedAt || new Date().toISOString();
       }
@@ -184,6 +192,8 @@ class MidiBridge extends EventEmitter {
         if (this.input._input?.removeAllListeners) this.input._input.removeAllListeners('message');
         if (this.input.removeAllListeners) this.input.removeAllListeners();
         this.input.close();
+        if (this.input.destroy) this.input.destroy();
+        if (this.input._input?.destroy) this.input._input.destroy();
       } catch (error) {
         this.emit('error', error);
       } finally {
@@ -200,6 +210,8 @@ class MidiBridge extends EventEmitter {
     if (this.output) {
       try {
         this.output.close();
+        if (this.output.destroy) this.output.destroy();
+        if (this.output._output?.destroy) this.output._output.destroy();
       } catch (error) {
         this.emit('error', error);
       } finally {
@@ -260,6 +272,126 @@ function sameOpenPort(port, currentName, desiredName) {
   } catch {
     return false;
   }
+}
+
+function midiRuntimeAvailable() {
+  if (process.platform === 'linux' && rawMidi) return true;
+  return Boolean(easymidi);
+}
+
+function createMidiInput(name) {
+  if (process.platform === 'linux' && rawMidi) return new DirectMidiInput(name);
+  if (!easymidi) throw new Error(easymidiLoadError ? easymidiLoadError.message : 'easymidi not available');
+  return new easymidi.Input(name);
+}
+
+function createMidiOutput(name) {
+  if (process.platform === 'linux' && rawMidi) return new DirectMidiOutput(name);
+  if (!easymidi) throw new Error(easymidiLoadError ? easymidiLoadError.message : 'easymidi not available');
+  return new easymidi.Output(name);
+}
+
+class DirectMidiInput extends EventEmitter {
+  constructor(name) {
+    super();
+    this.name = name;
+    this._input = new rawMidi.Input();
+    this._input.ignoreTypes(false, false, false);
+    this._input.on('message', (_deltaTime, bytes) => {
+      const parsed = parseRawMidiMessage(bytes);
+      if (!parsed) return;
+      this.emit(parsed.event, parsed.message);
+      this.emit('message', parsed.message);
+    });
+    try {
+      openRawPortByName(this._input, name, 'input');
+    } catch (error) {
+      this.destroy();
+      throw error;
+    }
+  }
+
+  close() {
+    this._input.closePort();
+  }
+
+  destroy() {
+    this._input.destroy();
+  }
+
+  isPortOpen() {
+    return this._input.isPortOpen();
+  }
+}
+
+class DirectMidiOutput {
+  constructor(name) {
+    this.name = name;
+    this._output = new rawMidi.Output();
+    try {
+      openRawPortByName(this._output, name, 'output');
+    } catch (error) {
+      this.destroy();
+      throw error;
+    }
+  }
+
+  close() {
+    this._output.closePort();
+  }
+
+  destroy() {
+    this._output.destroy();
+  }
+
+  isPortOpen() {
+    return this._output.isPortOpen();
+  }
+
+  send(type, args = {}) {
+    if (type === 'noteon') {
+      this._output.sendMessage([0x90 + Number(args.channel || 0), Number(args.note || 0), Number(args.velocity || 0)]);
+      return;
+    }
+    if (type === 'cc') {
+      this._output.sendMessage([0xb0 + Number(args.channel || 0), Number(args.controller || 0), Number(args.value || 0)]);
+      return;
+    }
+    if (type === 'sysex') {
+      this._output.sendMessage(Array.from(args || []).map((value) => Number(value)));
+      return;
+    }
+    throw new Error(`Unsupported MIDI output type: ${type}`);
+  }
+}
+
+function openRawPortByName(port, name, type) {
+  const count = port.getPortCount();
+  for (let index = 0; index < count; index += 1) {
+    if (port.getPortName(index) === name) {
+      port.openPort(index);
+      return;
+    }
+  }
+  throw new Error(`No MIDI ${type} found with name: ${name}`);
+}
+
+function parseRawMidiMessage(bytes = []) {
+  const data = Array.from(bytes || []).map((value) => Number(value));
+  if (data.length < 2) return null;
+  const status = data[0];
+  const type = status >> 4;
+  const channel = status & 0x0f;
+  if (type === 0x8) {
+    return { event: 'noteoff', message: { note: data[1], velocity: data[2] || 0, channel } };
+  }
+  if (type === 0x9) {
+    return { event: 'noteon', message: { note: data[1], velocity: data[2] || 0, channel } };
+  }
+  if (type === 0xb) {
+    return { event: 'cc', message: { controller: data[1], value: data[2] || 0, channel } };
+  }
+  return null;
 }
 
 function normalizeMidiEvent(eventName, message) {
