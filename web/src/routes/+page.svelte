@@ -171,7 +171,7 @@
   onMount(async () => {
     await loadInitial();
     connectWs();
-    pollTimer = setInterval(pollStatus, 500);
+    pollTimer = setInterval(pollStatus, 2000);
     ledClockTimer = setInterval(() => {
       ledClock = Date.now();
     }, 40);
@@ -236,7 +236,7 @@
 
   async function pollStatus() {
     try {
-      const response = await fetch('/api/status', { cache: 'no-store' });
+      const response = await fetch('/api/status?recent=0', { cache: 'no-store' });
       if (response.ok) applyStatus(await response.json());
     } catch {
       // WebSocket reconnect handles visible connection status.

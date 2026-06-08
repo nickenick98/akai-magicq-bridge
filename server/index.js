@@ -575,7 +575,8 @@ app.post('/api/page', (req, res) => {
 });
 
 app.get('/api/status', (req, res) => {
-  res.json({ ...status(), recent });
+  const includeRecent = req.query.recent !== '0';
+  res.json(includeRecent ? { ...status(), recent } : status());
 });
 
 app.get('/api/logs', async (req, res) => {
