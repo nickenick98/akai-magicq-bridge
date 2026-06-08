@@ -525,7 +525,7 @@ app.post('/api/system/update', (req, res) => {
 });
 
 app.post('/api/reconnect', (req, res) => {
-  reconnect({ forceMidi: true });
+  reconnect({ forceMidi: req.body?.forceMidi === true });
   res.json(status());
 });
 
